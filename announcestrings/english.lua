@@ -179,6 +179,13 @@ ANNOUNCE_STRINGS = {
 			end,
 		},
 		ANNOUNCE_HINT = "Announce",
+		CONTROLLER_MODE = {
+			TITLE = "Announce mode",
+			SWITCH = "Right stick: switch",
+			SINGLE = "single",
+			GROUP = "group",
+			CANCEL = "exit",
+		},
 		ANNOUNCE_WORLDTEMP = {
 			SURFACE = "World",
 			CAVES = "Caves",

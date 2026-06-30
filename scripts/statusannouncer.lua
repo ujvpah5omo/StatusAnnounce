@@ -1056,7 +1056,8 @@ end
 
 --血量信息 nil
 local function AnHPInfo(item)
-    if item and item.replica then
+	local hovered_item = ConsoleWorldEntityUnderMouse()
+    if item and item.replica and hovered_item == item then
         local text = ThePlayer.HUD.controls.hover.text:GetString()
         local lines = string.split(text, '\n')
         local r = ""
@@ -1117,9 +1118,7 @@ function StatusAnnouncer:AnnounceCount(count1, name1, count2, name2, dis, ent)
     end
 
     local announce_str = " "
-	local entity = ConsoleWorldEntityUnderMouse()
-	
-	local hover_text = AnHPInfo(entity)
+	local hover_text = AnHPInfo(ent)
 	local ssa = STRINGS._STATUS_ANNOUNCEMENTS._
 	
     local target = ""
@@ -1172,9 +1171,7 @@ end
 function StatusAnnouncer:AnnounceSingle(name, dis, ent)
     local target = ""
     local show_target = ""
-	local entity = ConsoleWorldEntityUnderMouse()
-	
-	local hover_text = AnHPInfo(entity)
+	local hover_text = AnHPInfo(ent)
 	local ssa = STRINGS._STATUS_ANNOUNCEMENTS._
 
 	local combat = ent.replica and ent.replica.combat
@@ -1206,8 +1203,7 @@ end
 function StatusAnnouncer:AnnouncePeople(he)
     local ssa = STRINGS._STATUS_ANNOUNCEMENTS._
     local sayHi = ssa.ANNOUNCE_SAYHI
-	local entity = ConsoleWorldEntityUnderMouse()
-	local hover_text = AnHPInfo(entity)
+	local hover_text = AnHPInfo(he)
 
     local message = sayHi.greeting
 

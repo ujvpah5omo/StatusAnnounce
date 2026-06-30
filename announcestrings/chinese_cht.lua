@@ -179,6 +179,13 @@ ANNOUNCE_STRINGS = {
 			end,
 		},
 		ANNOUNCE_HINT = "宣告",
+		CONTROLLER_MODE = {
+			TITLE = "宣告模式",
+			SWITCH = "右搖桿切換",
+			SINGLE = "單體",
+			GROUP = "同類",
+			CANCEL = "退出",
+		},
 		ANNOUNCE_WORLDTEMP = {
 			SURFACE = "地表",
 			CAVES = "洞穴",

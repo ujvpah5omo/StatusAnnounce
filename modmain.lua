@@ -686,11 +686,290 @@ local function GetDescriptionString(item)
     local adjective = item:GetAdjective()
     return adjective ~= nil and (adjective.." "..name) or name
 end
+
+local function AnnounceWorldEntity(ent, player, single)
+	if not ent or not ent:IsValid() or not ent.prefab then
+		return false
+	end
+	if ent == player then
+		return false
+	end
+	if ent:HasTag("player") and ent.name then
+		return StatusAnnouncer:AnnouncePeople(ent)
+	end
+
+	local x, y, z = player.Transform:GetWorldPosition()
+	local distance = math.floor(ent:GetDistanceSqToPoint(x, y, z)^0.5 / 4 * 10) / 10
+	local name2 = GetDescriptionString(ent)
+	if single then
+		return StatusAnnouncer:AnnounceSingle(name2, distance, ent)
+	end
+
+	local count1 = 0
+	local count2 = 0
+	local name1 = GLOBAL.STRINGS.NAMES[ent.prefab:upper()]
+	if IsMissingDisplayName(name1) then
+		name1 = GetBasicName(ent)
+	end
+	name1 = name1:gsub("{item}", ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+	local ents = GLOBAL.TheSim:FindEntities(x, 0, z, 80, nil, {"FX", "DECOR", "INLIMBO", "NOCLICK"})
+	for _, v in pairs(ents) do
+		if v.prefab == ent.prefab and v ~= player then
+			local stackable = v.replica and v.replica.stackable
+			local stack_size = stackable and stackable:StackSize() or 1
+			count1 = count1 + stack_size
+			if GetDescriptionString(v) == name2 then
+				count2 = count2 + stack_size
+			end
+		end
+	end
+
+	return StatusAnnouncer:AnnounceCount(count1, name1, count2, name2, distance, ent)
+end
+
 local cooldown = false
 AddComponentPostInit("playercontroller", function(self, inst)
     if inst ~= GLOBAL.ThePlayer then return end
     local PlayerControllerOnControl = self.OnControl
+
+	local function CancelControllerHoldTask()
+		if self._statusannounce_hold_task then
+			self._statusannounce_hold_task:Cancel()
+			self._statusannounce_hold_task = nil
+		end
+	end
+
+	local function ClearControllerTarget()
+		local highlight = self._statusannounce_highlight
+		if highlight and highlight:IsValid() and highlight.AnimState then
+			highlight.AnimState:SetHighlightColour()
+		end
+		self._statusannounce_highlight = nil
+		self._statusannounce_target = nil
+		if self._statusannounce_hint then
+			self._statusannounce_hint:Hide()
+			self._statusannounce_hint:SetTarget(nil)
+		end
+	end
+
+	local function ExitControllerAnnounceMode()
+		CancelControllerHoldTask()
+		ClearControllerTarget()
+		self._statusannounce_mode = false
+		self._statusannounce_hold_elapsed = nil
+		self._statusannounce_targets = nil
+		self._statusannounce_target_index = nil
+	end
+
+	local function IsControllerAnnounceTarget(ent)
+		return ent ~= nil
+			and ent ~= inst
+			and ent:IsValid()
+			and type(ent.prefab) == "string"
+			and ent.Transform ~= nil
+			and ent.AnimState ~= nil
+			and not ent:HasTag("FX")
+			and not ent:HasTag("DECOR")
+			and not ent:HasTag("INLIMBO")
+			and not ent:HasTag("NOCLICK")
+			and (GLOBAL.CanEntitySeeTarget == nil or GLOBAL.CanEntitySeeTarget(inst, ent))
+	end
+
+	local function GetControllerAnnounceTargets()
+		local x, y, z = inst.Transform:GetWorldPosition()
+		local targets = GLOBAL.TheSim:FindEntities(x, y, z, 80, nil, {"FX", "DECOR", "INLIMBO", "NOCLICK"})
+		local filtered = {}
+		for _, ent in ipairs(targets) do
+			if IsControllerAnnounceTarget(ent) then
+				table.insert(filtered, ent)
+			end
+		end
+		table.sort(filtered, function(a, b)
+			return inst:GetDistanceSqToInst(a) < inst:GetDistanceSqToInst(b)
+		end)
+		return filtered
+	end
+
+	local function EnsureControllerHint()
+		if self._statusannounce_hint or not inst.HUD or not inst.HUD.controls then
+			return
+		end
+		local FollowText = require("widgets/followtext")
+		self._statusannounce_hint = inst.HUD.controls:AddChild(FollowText(GLOBAL.TALKINGFONT, 28))
+		self._statusannounce_hint:SetHUD(inst.HUD.inst)
+		self._statusannounce_hint:SetOffset(GLOBAL.Vector3(0, 130, 0))
+		self._statusannounce_hint:Hide()
+	end
+
+	local function SetControllerAnnounceTarget(target)
+		ClearControllerTarget()
+		if not IsControllerAnnounceTarget(target) then
+			return false
+		end
+
+		self._statusannounce_target = target
+		local highlight = target.highlightforward or target
+		if highlight.AnimState then
+			highlight.AnimState:SetHighlightColour(.35, .35, .1, 0)
+			self._statusannounce_highlight = highlight
+		end
+
+		EnsureControllerHint()
+		if self._statusannounce_hint then
+			local strings = ANNOUNCE_STRINGS._.CONTROLLER_MODE
+			local controller_id = TheInput:GetControllerID()
+			local single_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ACTION)
+			local group_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ATTACK)
+			local cancel_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ALTACTION)
+			local hint = string.format(
+				"%s: %s\n%s  %s %s  %s %s  %s %s",
+				strings.TITLE,
+				GetDescriptionString(target),
+				strings.SWITCH,
+				single_control,
+				strings.SINGLE,
+				group_control,
+				strings.GROUP,
+				cancel_control,
+				strings.CANCEL
+			)
+			self._statusannounce_hint.text:SetString(hint)
+			self._statusannounce_hint:SetTarget(target)
+			self._statusannounce_hint:Show()
+		end
+		return true
+	end
+
+	local function EnterControllerAnnounceMode()
+		self._statusannounce_hold_task = nil
+		self._statusannounce_hold_elapsed = true
+		if not TheInput:ControllerAttached()
+			or not InGame()
+			or not inst.HUD
+			or (inst.HUD.IsControllerInventoryOpen and inst.HUD:IsControllerInventoryOpen()) then
+			return
+		end
+
+		local targets = GetControllerAnnounceTargets()
+		if #targets == 0 then
+			return
+		end
+
+		self._statusannounce_mode = true
+		self._statusannounce_targets = targets
+		local preferred = self:GetControllerTarget() or self:GetControllerAttackTarget()
+		local index = 1
+		if preferred then
+			for i, target in ipairs(targets) do
+				if target == preferred then
+					index = i
+					break
+				end
+			end
+		end
+		self._statusannounce_target_index = index
+		SetControllerAnnounceTarget(targets[index])
+	end
+
+	local function CycleControllerAnnounceTarget(step)
+		local current = self._statusannounce_target
+		local targets = GetControllerAnnounceTargets()
+		if #targets == 0 then
+			ExitControllerAnnounceMode()
+			return
+		end
+
+		local index = 0
+		for i, target in ipairs(targets) do
+			if target == current then
+				index = i
+				break
+			end
+		end
+		index = ((index - 1 + step) % #targets) + 1
+		self._statusannounce_targets = targets
+		self._statusannounce_target_index = index
+		SetControllerAnnounceTarget(targets[index])
+	end
+
+	local controller_next_controls = {
+		[GLOBAL.CONTROL_PRESET_RSTICK_RIGHT] = true,
+		[GLOBAL.CONTROL_PRESET_RSTICK_DOWN] = true,
+		[GLOBAL.CONTROL_INVENTORY_RIGHT] = true,
+		[GLOBAL.CONTROL_INVENTORY_DOWN] = true,
+		[GLOBAL.CONTROL_TARGET_CYCLE] = true,
+	}
+	local controller_previous_controls = {
+		[GLOBAL.CONTROL_PRESET_RSTICK_LEFT] = true,
+		[GLOBAL.CONTROL_PRESET_RSTICK_UP] = true,
+		[GLOBAL.CONTROL_INVENTORY_LEFT] = true,
+		[GLOBAL.CONTROL_INVENTORY_UP] = true,
+	}
+
     self.OnControl = function(self, control, down, ...)
+		if TheInput:ControllerAttached() then
+			if self._statusannounce_mode then
+				if controller_next_controls[control] then
+					if down then
+						CycleControllerAnnounceTarget(1)
+					end
+					return true
+				elseif controller_previous_controls[control] then
+					if down then
+						CycleControllerAnnounceTarget(-1)
+					end
+					return true
+				elseif control == GLOBAL.CONTROL_CONTROLLER_ACTION or control == GLOBAL.CONTROL_ACCEPT then
+					if down and self._statusannounce_target then
+						AnnounceWorldEntity(self._statusannounce_target, inst, true)
+						ExitControllerAnnounceMode()
+					end
+					return true
+				elseif control == GLOBAL.CONTROL_CONTROLLER_ATTACK then
+					if down and self._statusannounce_target then
+						AnnounceWorldEntity(self._statusannounce_target, inst, false)
+						ExitControllerAnnounceMode()
+					end
+					return true
+				elseif control == GLOBAL.CONTROL_CONTROLLER_ALTACTION or control == GLOBAL.CONTROL_CANCEL then
+					if down then
+						ExitControllerAnnounceMode()
+					end
+					return true
+				elseif control == GLOBAL.CONTROL_INSPECT then
+					return true
+				elseif control == GLOBAL.CONTROL_OPEN_INVENTORY
+					or control == GLOBAL.CONTROL_OPEN_CRAFTING
+					or control == GLOBAL.CONTROL_MAP
+					or control == GLOBAL.CONTROL_PAUSE then
+					ExitControllerAnnounceMode()
+				end
+			elseif control == GLOBAL.CONTROL_INSPECT then
+				local is_holding = self._statusannounce_hold_task ~= nil
+					or self._statusannounce_hold_elapsed ~= nil
+				local can_start = InGame()
+					and inst.HUD ~= nil
+					and (not inst.HUD.IsControllerInventoryOpen or not inst.HUD:IsControllerInventoryOpen())
+				if down and can_start then
+					CancelControllerHoldTask()
+					self._statusannounce_hold_elapsed = false
+					self._statusannounce_hold_task = inst:DoTaskInTime(.5, EnterControllerAnnounceMode)
+					return true
+				elseif not down and is_holding then
+					local should_inspect = self._statusannounce_hold_task ~= nil
+						or self._statusannounce_hold_elapsed == true
+					CancelControllerHoldTask()
+					self._statusannounce_hold_elapsed = nil
+					if should_inspect then
+						PlayerControllerOnControl(self, control, true, ...)
+						PlayerControllerOnControl(self, control, false, ...)
+					end
+					return true
+				end
+			end
+		end
+
         if InGame() and not cooldown
 		 
 		and (control == GLOBAL.CONTROL_PRIMARY or  control == GLOBAL.CONTROL_SECONDARY )-- 鼠标左右键点击
@@ -704,44 +983,13 @@ AddComponentPostInit("playercontroller", function(self, inst)
 
 			local ent = GLOBAL.TheInput:GetWorldEntityUnderMouse()
 			if ent and ent.prefab then
-				if ent == GLOBAL.ThePlayer then
-					return PlayerControllerOnControl(self, control, down, ...)
-				end
-				if ent:HasTag("player") and ent.name and ent ~= GLOBAL.ThePlayer then
-					return StatusAnnouncer:AnnouncePeople(ent)
-				end
-				local x, _, z = inst.Transform:GetWorldPosition()
-				local ents = GLOBAL.TheSim:FindEntities(x,0,z, 80, nil, {'FX','DECOR','INLIMBO','NOCLICK'})
-				local dis = ent:GetDistanceSqToPoint(x, _, z)^0.5
-				local count1 = 0
-				local count2 = 0
-				local name1 = GLOBAL.STRINGS.NAMES[ent.prefab:upper()]
-				if IsMissingDisplayName(name1) then
-					name1 = GetBasicName(ent)
-				end
-				if string.find(name1, "{item}") then
-					name1 = string.gsub(name1,"{item}","")
-				end
-				local name2 = GetDescriptionString(ent)
-				if control == GLOBAL.CONTROL_SECONDARY then
-					return StatusAnnouncer:AnnounceSingle(name2, math.floor(ent:GetDistanceSqToPoint(x, _, z)^0.5/4*10)/10, ent)
-				end
-				for k,v in pairs(ents)do
-					if v.prefab == ent.prefab and v ~= GLOBAL.ThePlayer then
-						local stackable = v.replica and v.replica.stackable
-						local stack_size = stackable and stackable:StackSize() or 1
-						count1 = count1 + stack_size
-						if GetDescriptionString(v) == name2 then
-							count2 = count2 + stack_size
-						end
-					end
-				end
-                
-				return StatusAnnouncer:AnnounceCount(count1, name1, count2, name2, math.floor(dis/4*10)/10, ent)
+				return AnnounceWorldEntity(ent, inst, control == GLOBAL.CONTROL_SECONDARY)
 			end
         end
         return PlayerControllerOnControl(self, control, down, ...)
     end
+
+	inst:ListenForEvent("onremove", ExitControllerAnnounceMode)
 end)
 
 --ping宣告
