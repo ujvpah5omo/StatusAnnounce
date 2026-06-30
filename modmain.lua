@@ -819,13 +819,15 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		if self._statusannounce_hint then
 			local strings = ANNOUNCE_STRINGS._.CONTROLLER_MODE
 			local controller_id = TheInput:GetControllerID()
+			local switch_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_INSPECT)
 			local single_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ACTION)
 			local group_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ATTACK)
 			local cancel_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ALTACTION)
 			local hint = string.format(
-				"%s: %s\n%s  %s %s  %s %s  %s %s",
+				"%s: %s\n%s %s  %s %s  %s %s  %s %s",
 				strings.TITLE,
 				GetDescriptionString(target),
+				switch_control,
 				strings.SWITCH,
 				single_control,
 				strings.SINGLE,
@@ -893,34 +895,10 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		SetControllerAnnounceTarget(targets[index])
 	end
 
-	local controller_next_controls = {
-		[GLOBAL.CONTROL_PRESET_RSTICK_RIGHT] = true,
-		[GLOBAL.CONTROL_PRESET_RSTICK_DOWN] = true,
-		[GLOBAL.CONTROL_INVENTORY_RIGHT] = true,
-		[GLOBAL.CONTROL_INVENTORY_DOWN] = true,
-		[GLOBAL.CONTROL_TARGET_CYCLE] = true,
-	}
-	local controller_previous_controls = {
-		[GLOBAL.CONTROL_PRESET_RSTICK_LEFT] = true,
-		[GLOBAL.CONTROL_PRESET_RSTICK_UP] = true,
-		[GLOBAL.CONTROL_INVENTORY_LEFT] = true,
-		[GLOBAL.CONTROL_INVENTORY_UP] = true,
-	}
-
     self.OnControl = function(self, control, down, ...)
 		if TheInput:ControllerAttached() then
 			if self._statusannounce_mode then
-				if controller_next_controls[control] then
-					if down then
-						CycleControllerAnnounceTarget(1)
-					end
-					return true
-				elseif controller_previous_controls[control] then
-					if down then
-						CycleControllerAnnounceTarget(-1)
-					end
-					return true
-				elseif control == GLOBAL.CONTROL_CONTROLLER_ACTION or control == GLOBAL.CONTROL_ACCEPT then
+				if control == GLOBAL.CONTROL_CONTROLLER_ACTION or control == GLOBAL.CONTROL_ACCEPT then
 					if down and self._statusannounce_target then
 						AnnounceWorldEntity(self._statusannounce_target, inst, true)
 						ExitControllerAnnounceMode()
@@ -938,6 +916,9 @@ AddComponentPostInit("playercontroller", function(self, inst)
 					end
 					return true
 				elseif control == GLOBAL.CONTROL_INSPECT then
+					if down then
+						CycleControllerAnnounceTarget(1)
+					end
 					return true
 				elseif control == GLOBAL.CONTROL_OPEN_INVENTORY
 					or control == GLOBAL.CONTROL_OPEN_CRAFTING
