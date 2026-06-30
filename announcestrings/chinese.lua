@@ -27,7 +27,7 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_ITEM = {
 			-- This needs to reflect the translating language's grammar
 			-- For example, this might become "I have 6 papyrus in this chest."
-			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {S}{ITEM}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}。",
+			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {S}{ITEM}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}{ITEM_NAME_INTRO}{ITEM_NAME2}。",
 
 			--One of these goes into {I_HAVE}
 			I_HAVE = "我拥有 ",
@@ -49,6 +49,7 @@ ANNOUNCE_STRINGS = {
 			WITH = " 拥有 ", --if it's only one thing
 			AND_THIS_ONE_HAS = ", 这个拥有 ", --if there are multiple, show durability of one
 			AND_THIS_ONE_IS = ", 这个拥有 ", --if there are multiple, show durability of one
+			AND_THIS_ONE_NAME = ", 这个名为 ",
 
 			--{PERCENT} is acquired from the item's durability
 
@@ -183,6 +184,8 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_WORLDTEMP = {
 			SURFACE = "地表",
 			CAVES = "洞穴",
+			PORKLAND = "哈姆雷特",
+			ISLAND = "海难",
 			RAIN = "降雨",
 			SPRING = "春天",
 			SUMMER = "夏天",
@@ -193,10 +196,26 @@ ANNOUNCE_STRINGS = {
 			AUTUMN_RAIN = "秋雨",
 			WINTER_RAIN = "纷纷白雪",
 			CAVES_RAIN = "大雨",
-			RAIN_START = "%s将会在第%.2f天迎来一场%s(%d分%d秒)",
-			RAIN_START2 = "%s的这个%s不会再有%s啦",
-			RAIN_STOP = "%s的%s会在第%.2f天时停止(%d分%d秒)",
-			WT = "(世界温度:%d°) %s",
+			TEMPERATE = "和平季",
+			HUMID = "潮湿季",
+			LUSH = "繁茂季",
+			APORKALYPSE = "毁灭季",
+			MILD = "温和季",
+			WET = "飓风季",
+			GREEN = "雨季",
+			DRY = "旱季",
+			TEMPERATE_RAIN = "和平雨",
+			HUMID_RAIN = "回南天雨",
+			LUSH_RAIN = "雨",
+			APORKALYPSE_RAIN = "雨",
+			MILD_RAIN = "不温和雨",
+			WET_RAIN = "飓风大雨",
+			GREEN_RAIN = "瓢泼大雨",
+			DRY_RAIN = "雨",
+			RAIN_START = "%s 将会在第 %.2f 天迎来一场%s(%d分%d秒)",
+			RAIN_START2 = "%s 的这个 %s 不会再有%s啦！",
+			RAIN_STOP = "%s 的%s会在第 %.2f 天时停止(%d分%d秒)",
+			WT = "【世界温度: %d° | %d°C】%s",
         },
 		An_null = "未知物体",
 		An_null2 = "未知生物",

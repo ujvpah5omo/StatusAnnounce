@@ -110,6 +110,47 @@ local container_prefab_map = {
 	shadow_container = "magician_chest"
 }
 
+local function is_missing_name(name)
+	return type(name) ~= "string"
+		or name:find("^%s*$") ~= nil
+		or name:upper():find("MISSING NAME", 1, true) ~= nil
+		or name == "<missing_string>"
+end
+
+local function get_prefab_fallback(inst)
+	local prefab = inst and inst.prefab
+	if type(prefab) ~= "string" then
+		return nil
+	end
+	local name = STRINGS.NAMES[prefab:upper()]
+	return not is_missing_name(name) and name or prefab:gsub("_", " ")
+end
+
+local function get_basic_name(inst)
+	if not inst then
+		return nil
+	end
+	local name = inst.GetBasicDisplayName and inst:GetBasicDisplayName() or nil
+	return not is_missing_name(name) and name or get_prefab_fallback(inst)
+end
+
+local function get_display_name(inst)
+	if not inst then
+		return nil
+	end
+	local name = inst.GetDisplayName and inst:GetDisplayName() or get_basic_name(inst)
+	return not is_missing_name(name) and name or get_prefab_fallback(inst)
+end
+
+local function get_description_name(inst)
+	local name = get_display_name(inst)
+	if not name then
+		return ""
+	end
+	local adjective = inst.GetAdjective and inst:GetAdjective() or nil
+	return adjective and (adjective .. " " .. name) or name
+end
+
 local function get_container_name(container)
 	if not container then return end
 	if container_prefab_map[container.prefab] then
@@ -119,7 +160,7 @@ local function get_container_name(container)
 	if type(container.prefab) == "string" and container.prefab:find("^beard_sack_%d$") then
 		return STRINGS.SKILLTREE.WILSON.WILSON_BEARD_7_TITLE:lower()
 	end
-	local container_name = container:GetBasicDisplayName()
+	local container_name = get_basic_name(container)
 	local container_prefab = container and container.prefab
 	local underscore_index = container_prefab and container_prefab:find("_container")
 	--container name was empty or blank, and matches the bundle container prefab naming system
@@ -240,17 +281,17 @@ function StatusAnnouncer:AnnounceItem(slot)
 	local container_name = get_container_name(container.type and container.inst)
 	-- Try to trace the path from construction container to the constructionsite that spawned it
 	if not container_name then
-		if not container_name then
-			local player = container.inst.entity:GetParent()
-			local constructionbuilder = player and player.components and player.components.constructionbuilder
-			if constructionbuilder and constructionbuilder.constructionsite then
-				container_name = get_container_name(constructionbuilder.constructionsite)
-			end
+		local player = container.inst and container.inst.entity:GetParent()
+		local constructionbuilder = player and player.components and player.components.constructionbuilder
+		if constructionbuilder and constructionbuilder.constructionsite then
+			container_name = get_container_name(constructionbuilder.constructionsite)
 		end
 	end
-	local name = item:GetBasicDisplayName():lower()
+	local prefab_name = type(item.prefab) == "string" and STRINGS.NAMES[item.prefab:upper()] or nil
+	local name = (not is_missing_name(prefab_name) and prefab_name or get_basic_name(item) or "unknown item"):lower()
+	local description_name = get_description_name(item)
 	local has, num_found = container:Has(item.prefab, 1)
-	num_found = num_found + num_equipped
+	num_found = (num_found or 0) + num_equipped
 	local i_have = ""
 	local in_this = ""
 	if container_name then -- this is a chest
@@ -264,6 +305,8 @@ function StatusAnnouncer:AnnounceItem(slot)
 	local plural = num_found > 1
 	local with = ""
 	local durability = ""
+	local item_name_intro = ""
+	local item_name2 = ""
 	if SHOWDURABILITY and percent then
 		with = plural
 				and S.ANNOUNCE_ITEM.AND_THIS_ONE_HAS
@@ -293,6 +336,16 @@ function StatusAnnouncer:AnnounceItem(slot)
 		end
 	end
 	if this_many == nil or this_many == "1" then this_many = a end
+	local has_variable_name = name:find("{item}", 1, true) ~= nil
+	if has_variable_name and description_name ~= "" and name:lower() ~= description_name:lower() then
+		if plural then
+			name = name:gsub("{item}", ""):gsub("^%s+", ""):gsub("%s+$", "")
+			item_name_intro = S.ANNOUNCE_ITEM.AND_THIS_ONE_NAME
+			item_name2 = description_name
+		else
+			name = description_name
+		end
+	end
 	local announce_str = subfmt(S.ANNOUNCE_ITEM.FORMAT_STRING,
 								{
 									I_HAVE = i_have,
@@ -304,6 +357,8 @@ function StatusAnnouncer:AnnounceItem(slot)
 									WITH = with,
 									PERCENT = percent,
 									DURABILITY = durability,
+									ITEM_NAME_INTRO = item_name_intro,
+									ITEM_NAME2 = item_name2,
 								})
 	local data = {
 		item = item,
@@ -395,13 +450,16 @@ function StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 	local knows = builder:KnowsRecipe(recipe.name) or CanPrototypeRecipe(recipe.level, builder:GetTechTrees())
 	local can_build = builder:HasIngredients(recipe.name)
 	local recipe_product = recipe.product
-	local strings_name = STRINGS.NAMES[recipe_product:upper()]
-	if not strings_name then
-		recipe_product = recipe.name
+	local recipe_name = recipe.nameoverride or recipe.name or recipe_product
+	local strings_name = type(recipe_name) == "string" and STRINGS.NAMES[recipe_name:upper()] or nil
+	if not strings_name and type(recipe_product) == "string" then
 		strings_name = STRINGS.NAMES[recipe_product:upper()]
 	end
-	local key = "RECIPE_" .. tostring(recipe_product)
-	local name = strings_name and strings_name:lower() or "<missing_string>"
+	local key = "RECIPE_" .. tostring(recipe_name or recipe_product)
+	local name = strings_name
+		or (type(recipe_name) == "string" and recipe_name:gsub("_", " "))
+		or "unknown recipe"
+	name = name:lower()
 	local a = S.getArticle(name)
 	local prototyper = ""
 	if not knows then
@@ -433,8 +491,13 @@ function StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 			to_do = S.ANNOUNCE_RECIPE.ILL_MAKE
 		elseif knows then
 			to_do = S.ANNOUNCE_RECIPE.WE_NEED
-			a = ""
-			s = string.find(name, S.S.."$") == nil and S.S or ""
+			if S.LANGUAGE == "chinese" or S.LANGUAGE == "chinese_cht" then
+				a = "更多"
+				s = ""
+			else
+				a = ""
+				s = string.find(name, S.S.."$") == nil and S.S or ""
+			end
 		else
 			to_do = S.ANNOUNCE_RECIPE.CAN_SOMEONE
 			if prototyper ~= "" and SHOWPROTOTYPER then
@@ -460,7 +523,7 @@ function StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 										PROTOTYPER = proto,
 										FOR_IT = for_it,
 									})
-		if string.find(announce_str, "\?\.$") ~= nil then
+		if string.find(announce_str, "%?%.$") ~= nil then
 			-- In some cases (maybe only reachable through testing partial code),
 			-- it ends up with ?. at the end, so trim the period
 			announce_str = announce_str:sub(1, announce_str:len() - 1)
@@ -486,7 +549,7 @@ function StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 		end
 		num = amount_needed - num_found
 		local can_make = math.floor(num_found / amount_needed)*recipe.numtogive
-		local ingredient_str = (STRINGS.NAMES[ingredient:upper()] or "<missing_string>"):lower()
+		local ingredient_str = (STRINGS.NAMES[ingredient:upper()] or ingredient:gsub("_", " ")):lower()
 		if num == 1 or ingredient_str:find(ing_s.."$") ~= nil then ing_s = "" end
 		local announce_str = "";
 		if num > 0 then
@@ -545,11 +608,12 @@ function StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 end
 
 function StatusAnnouncer:AnnounceSkin(recipe, skin)
-	local recipe_name = recipe.product
-	local item_name = STRINGS.NAMES[string.upper(recipe.product)]
+	local recipe_name = recipe.nameoverride or recipe.name or recipe.product
+	local item_name = type(recipe_name) == "string" and STRINGS.NAMES[string.upper(recipe_name)] or nil
 	if not item_name then
-		recipe_name = recipe.name
-		item_name = recipe_name
+		item_name = type(recipe.product) == "string" and STRINGS.NAMES[string.upper(recipe.product)] or nil
+			or (type(recipe_name) == "string" and recipe_name:gsub("_", " "))
+			or "unknown item"
 	end
 	if skin ~= item_name then --don't announce default skins
 		local message = subfmt(STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_SKIN.FORMAT_STRING,
@@ -565,7 +629,7 @@ end
 
 function StatusAnnouncer:AnnounceTemperature(pronoun)
 	local S = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_TEMPERATURE --To save some table lookups
-	local temp = ThePlayer:GetTemperature()
+	local temp = tonumber(ThePlayer:GetTemperature()) or 0
 	local pronoun = pronoun and S.PRONOUN[pronoun] or S.PRONOUN.DEFAULT
 	local message = S.TEMPERATURE.GOOD
 	local TUNING = TUNING
@@ -588,7 +652,7 @@ function StatusAnnouncer:AnnounceTemperature(pronoun)
 							TEMPERATURE = message,
 						})
 	if EXPLICIT then
-		message = string.format("(%d\176) %s", temp, message)
+		message = string.format("(%d° | %d°C) %s", temp, temp / 2, message)
 	end
 	local data = {
 		pronoun = pronoun,
@@ -1060,8 +1124,10 @@ function StatusAnnouncer:AnnounceCount(count1, name1, count2, name2, dis, ent)
 	
     local target = ""
     local show_target = ""
-	if ent.replica.combat and ent.replica.combat._target:value() ~= nil then
-		target = ent.replica.combat._target:value().name or ssa.An_null
+	local combat = ent.replica and ent.replica.combat
+	local combat_target = combat and combat._target and combat._target:value() or nil
+	if combat_target then
+		target = get_display_name(combat_target) or ssa.An_null
 
 		show_target = subfmt(ssa.ANNONCE_COUNT.SHOW_TARGET, {
 			TARGET = target,
@@ -1081,6 +1147,11 @@ function StatusAnnouncer:AnnounceCount(count1, name1, count2, name2, dis, ent)
         if count2 ~= count1 and name1 ~= name2 then
             --str = "，"..count2..STRINGS._STATUS_ANNOUNCEMENTS._.S..STRINGS._STATUS_ANNOUNCEMENTS._.An_name..name2
             str = "，"..ssa.An_name..name2
+		elseif count2 == count1 and name1 ~= name2 then
+			name1 = name2
+			str = subfmt("，"..ssa.An_distance, {
+				DISTANCE = dis,
+			})
 		else
 			str = subfmt("，"..ssa.An_distance, {
 				DISTANCE = dis,
@@ -1106,8 +1177,10 @@ function StatusAnnouncer:AnnounceSingle(name, dis, ent)
 	local hover_text = AnHPInfo(entity)
 	local ssa = STRINGS._STATUS_ANNOUNCEMENTS._
 
-    if ent.replica.combat and ent.replica.combat._target:value() ~= nil then
-        target = ent.replica.combat._target:value().name or ssa.An_null
+	local combat = ent.replica and ent.replica.combat
+	local combat_target = combat and combat._target and combat._target:value() or nil
+    if combat_target then
+        target = get_display_name(combat_target) or ssa.An_null
 
         show_target = subfmt(ssa.ANNONCE_COUNT.SHOW_TARGET, {
             TARGET = target,
@@ -1156,153 +1229,221 @@ end
 --END
 
 -- 降雨预测
-local function PredictRainStart()
-    -- 一场雨什么时候下由上限决定、什么时候停由下限决定
-    -- 冬天第二天上涨速率是50
-    -- 水分 = 水分速率下限 + (水分速率上限 - 水分速率下限) * {1 - Sin[Π * (当前季节剩余天数, 包括当天) / 当前季节总天数]}
-
-    -- 水分速率上下限
-    local MOISTURE_RATES = {
-        MIN = {
-            autumn = .25,
-            winter = .25,
-            spring = 3,
-            summer = .1
-        },
-        MAX = {
-            autumn = 1.0,
-            winter = 1.0,
-            spring = 3.75,
-            summer = .5
-        }
-    }
-    local world = TheWorld.net.components.weather ~= nil and "Surface" or "Caves"
-    local remainingsecondsinday = TUNING.TOTAL_DAY_TIME - (TheWorld.state.time * TUNING.TOTAL_DAY_TIME)
-    local totalseconds = 0
-    local rain = false
-
-    local season = TheWorld.state.season
-    local seasonprogress = TheWorld.state.seasonprogress
-    local elapseddaysinseason = TheWorld.state.elapseddaysinseason
-    local remainingdaysinseason = TheWorld.state.remainingdaysinseason
-    local totaldaysinseason = remainingdaysinseason / (1 - seasonprogress)
-    local _totaldaysinseason = elapseddaysinseason + remainingdaysinseason
-
-    local moisture = TheWorld.state.moisture
-    local moistureceil = TheWorld.state.moistureceil
-
-    while elapseddaysinseason < _totaldaysinseason do
-        local moisturerate
-
-        if world == "Surface" and season == "winter" and elapseddaysinseason == 2 then
-            moisturerate = 50
-        else
-            local p = 1 - math.sin(PI * seasonprogress)
-            moisturerate = MOISTURE_RATES.MIN[season] + p * (MOISTURE_RATES.MAX[season] - MOISTURE_RATES.MIN[season])
-        end
-
-        local _moisture = moisture + (moisturerate * remainingsecondsinday)
-
-        if _moisture >= moistureceil then
-            totalseconds = totalseconds + ((moistureceil - moisture) / moisturerate)
-            rain = true
-            break
-        else
-            moisture = _moisture
-            totalseconds = totalseconds + remainingsecondsinday
-            remainingsecondsinday = TUNING.TOTAL_DAY_TIME
-            elapseddaysinseason = elapseddaysinseason + 1
-            remainingdaysinseason = remainingdaysinseason - 1
-            seasonprogress = 1 - (remainingdaysinseason / totaldaysinseason)
-        end
-    end
-    if world == "Surface" then
-        world = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SURFACE
-    elseif world == "Caves" then
-        world = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.CAVES
-    end
-    return world, totalseconds, rain
+local function GetWorldType()
+	return TheWorld:HasTag("porkland") and "porkland"
+		or TheWorld:HasTag("island") and "island"
+		or TheWorld:HasTag("cave") and "Caves"
+		or "Surface"
 end
+
+local function GetWorldDisplayName(world_type)
+	local S = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP
+	if world_type == "porkland" then
+		return S.PORKLAND
+	elseif world_type == "island" then
+		return S.ISLAND
+	elseif world_type == "Caves" then
+		return S.CAVES
+	end
+	return S.SURFACE
+end
+
+local function GetMoistureRates(world_type)
+	if world_type == "island" then
+		return {
+			MIN = {
+				mild = 0,
+				wet = 3,
+				green = 3,
+				dry = 0,
+			},
+			MAX = {
+				mild = .1,
+				wet = 3.75,
+				green = 3.75,
+				dry = -.2,
+			},
+		}
+	elseif world_type == "porkland" then
+		return {
+			MIN = {
+				temperate = .25,
+				humid = 3,
+				lush = 0,
+				aporkalypse = .1,
+			},
+			MAX = {
+				temperate = 1,
+				humid = 3.75,
+				lush = -.2,
+				aporkalypse = .5,
+			},
+		}
+	end
+	return {
+		MIN = {
+			autumn = .25,
+			winter = .25,
+			spring = 3,
+			summer = .1,
+		},
+		MAX = {
+			autumn = 1,
+			winter = 1,
+			spring = 3.75,
+			summer = .5,
+		},
+	}
+end
+
+local function PredictRainStart()
+	local world_type = GetWorldType()
+	local rates = GetMoistureRates(world_type)
+	local state = TheWorld.state
+	local season = state.season
+	local seasonprogress = tonumber(state.seasonprogress) or 0
+	local elapseddaysinseason = tonumber(state.elapseddaysinseason) or 0
+	local remainingdaysinseason = tonumber(state.remainingdaysinseason) or 0
+	local moisture = tonumber(state.moisture)
+	local moistureceil = tonumber(state.moistureceil)
+	local min_rate = rates.MIN[season]
+	local max_rate = rates.MAX[season]
+	local world_name = GetWorldDisplayName(world_type)
+
+	if moisture == nil or moistureceil == nil or min_rate == nil or max_rate == nil then
+		return world_name, 0, false, world_type
+	end
+
+	local progress_left = 1 - seasonprogress
+	local totaldaysinseason = progress_left > 0 and remainingdaysinseason / progress_left
+		or elapseddaysinseason + remainingdaysinseason
+	if totaldaysinseason <= 0 then
+		return world_name, 0, false, world_type
+	end
+
+	local remainingsecondsinday = TUNING.TOTAL_DAY_TIME - ((tonumber(state.time) or 0) * TUNING.TOTAL_DAY_TIME)
+	local final_day = elapseddaysinseason + remainingdaysinseason
+	local totalseconds = 0
+	local rain = false
+
+	while elapseddaysinseason < final_day do
+		local moisturerate
+		if world_type == "Surface" and season == "winter" and elapseddaysinseason == 2 then
+			moisturerate = 50
+		elseif world_type == "island" then
+			local adjusted_progress = seasonprogress
+			if season == "green" then
+				local greenlength = tonumber(state.greenlength) or totaldaysinseason
+				adjusted_progress = greenlength > 5 and (elapseddaysinseason - 5) / (greenlength - 5) or 0
+			elseif season == "wet" then
+				adjusted_progress = seasonprogress * 1.5
+			end
+			local p = 1 - math.sin(PI * adjusted_progress)
+			moisturerate = season == "green" and elapseddaysinseason <= 5 and 0
+				or min_rate + p * (max_rate - min_rate)
+		else
+			local p = 1 - math.sin(PI * seasonprogress)
+			moisturerate = min_rate + p * (max_rate - min_rate)
+		end
+
+		local next_moisture = moisture + moisturerate * remainingsecondsinday
+		if moisturerate > 0 and next_moisture >= moistureceil then
+			totalseconds = totalseconds + (moistureceil - moisture) / moisturerate
+			rain = true
+			break
+		end
+
+		moisture = next_moisture
+		totalseconds = totalseconds + remainingsecondsinday
+		remainingsecondsinday = TUNING.TOTAL_DAY_TIME
+		elapseddaysinseason = elapseddaysinseason + 1
+		remainingdaysinseason = remainingdaysinseason - 1
+		seasonprogress = 1 - remainingdaysinseason / totaldaysinseason
+	end
+
+	return world_name, totalseconds, rain, world_type
+end
+
 -- 停雨预测
 local function PredictRainStop()
-    local PRECIP_RATE_SCALE = 10
-    local MIN_PRECIP_RATE = .1
-
-    local world = TheWorld.net.components.weather ~= nil and "Surface" or "Caves"
-    local dbgstr = (TheWorld.net.components.weather ~= nil and TheWorld.net.components.weather:GetDebugString()) or
-                       TheWorld.net.components.caveweather:GetDebugString()
-    --local _, _, moisture, moisturefloor, moistureceil, moisturerate, preciprate, peakprecipitationrate = string.find(
-    --    dbgstr, ".*moisture:(%d+.%d+)%((%d+.%d+)/(%d+.%d+)%) %+ (%d+.%d+), preciprate:%((%d+.%d+) of (%d+.%d+)%).*")	--新版刀子雨天气信息的文本格式改了,  导致它获取不到数字，更改下列方式
-	local _, _, moisture, moisturefloor, moistureceil, moisturerate = string.find(dbgstr,
-        ".*moisture: (%d+.%d+) %((%d+.%d+)/(%d+.%d+)%) %+ (%d+.%d+).*")
-    local _, _, preciprate, peakprecipitationrate = string.find(dbgstr, ".*preciprate: %((%d+.%d+) of (%d+.%d+)%).*")
-
-    moisture = tonumber(moisture)
-    moistureceil = tonumber(moistureceil)
-    moisturefloor = tonumber(moisturefloor)
-    preciprate = tonumber(preciprate)
-    peakprecipitationrate = tonumber(peakprecipitationrate)
-
-    local totalseconds = 0
-	
-	if moisture == nil then
-		moisture = 0
+	local PRECIP_RATE_SCALE = 10
+	local MIN_PRECIP_RATE = .1
+	local world_type = GetWorldType()
+	local world_name = GetWorldDisplayName(world_type)
+	local components = TheWorld.net and TheWorld.net.components or nil
+	local weather = components and (
+		components.weather
+		or (world_type == "island" and components.shipwreckedweather)
+		or (world_type == "Caves" and components.caveweather)
+		or (world_type == "porkland" and components.plateauweather)
+	)
+	local dbgstr = weather and weather.GetDebugString and weather:GetDebugString() or nil
+	if type(dbgstr) ~= "string" then
+		return world_name, 0, world_type
 	end
-	if moisturefloor == nil then
-		moisturefloor = 0
+
+	dbgstr = dbgstr:gsub("%s+", "")
+	local pattern = "moisture:([%-%d%.]+)%(([%-%d%.]+)/([%-%d%.]+)%).-preciprate:%(([%-%d%.]+)of([%-%d%.]+)%)"
+	local moisture, moisturefloor, moistureceil, preciprate, peakprecipitationrate = dbgstr:match(pattern)
+	moisture = tonumber(moisture) or 0
+	moisturefloor = tonumber(moisturefloor) or 0
+	moistureceil = tonumber(moistureceil) or 0
+	preciprate = tonumber(preciprate) or 0
+	peakprecipitationrate = tonumber(peakprecipitationrate) or 0
+
+	local totalseconds = 0
+	while moisture > moisturefloor and preciprate > 0 and moistureceil > moisturefloor do
+		local p = math.max(0, math.min(1, (moisture - moisturefloor) / (moistureceil - moisturefloor)))
+		local rate = MIN_PRECIP_RATE + (1 - MIN_PRECIP_RATE) * math.sin(p * PI)
+		preciprate = math.min(rate, peakprecipitationrate)
+		if preciprate <= 0 then
+			break
+		end
+		moisture = math.max(moisture - preciprate * FRAMES * PRECIP_RATE_SCALE, 0)
+		totalseconds = totalseconds + FRAMES
 	end
-    while moisture > moisturefloor do
-        if preciprate > 0 then
-            local p = math.max(0, math.min(1, (moisture - moisturefloor) / (moistureceil - moisturefloor)))
-            local rate = MIN_PRECIP_RATE + (1 - MIN_PRECIP_RATE) * math.sin(p * PI)
 
-            preciprate = math.min(rate, peakprecipitationrate)
-            moisture = math.max(moisture - preciprate * FRAMES * PRECIP_RATE_SCALE, 0)
-
-            totalseconds = totalseconds + FRAMES
-        else
-            break
-        end
-    end
-
-    if world == "Surface" then
-        world = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SURFACE
-    elseif world == "Caves" then
-        world = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.CAVES
-    end
-
-    return world, totalseconds
+	return world_name, totalseconds, world_type
 end
+
 --世界温度宣告 -源自Shang
 function StatusAnnouncer:AnnounceWorldtemp(pronoun)
     local S = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP or nil -- 以保存一些表查找
     if S then
-        local temp = TheWorld.state.temperature
+        local temp = tonumber(TheWorld.state.temperature) or 0
         local message = ""
         local tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.RAIN
-        local tseason = TheWorld.state.season
-        if tseason == "spring" then
-            tseason = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SPRING
-            tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SPRING_RAIN
-        elseif tseason == "summer" then
-            tseason = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SUMMER
-            tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.SUMMER_RAIN
-        elseif tseason == "autumn" then
-            tseason = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.AUTUMN
-            tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.AUTUMN_RAIN
-        elseif tseason == "winter" then
-            tseason = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.WINTER
-            tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.WINTER_RAIN
-        end
+        local season = TheWorld.state.season
+		local season_keys = {
+			spring = "SPRING",
+			summer = "SUMMER",
+			autumn = "AUTUMN",
+			winter = "WINTER",
+			temperate = "TEMPERATE",
+			humid = "HUMID",
+			lush = "LUSH",
+			aporkalypse = "APORKALYPSE",
+			mild = "MILD",
+			wet = "WET",
+			green = "GREEN",
+			dry = "DRY",
+		}
+		local season_key = season_keys[season]
+		local tseason = season_key and S[season_key] or tostring(season)
+		if season_key and S[season_key .. "_RAIN"] then
+			tshow = S[season_key .. "_RAIN"]
+		end
 
         if TheWorld.state.pop ~= 1 then
-            local world, totalseconds, rain = PredictRainStart()
-            if world == "Caves" then
+            local world, totalseconds, rain, world_type = PredictRainStart()
+            if world_type == "Caves" then
                 tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.CAVES_RAIN
             end
 
             if rain then
-                local d = TheWorld.state.cycles + 1 + TheWorld.state.time + (totalseconds / TUNING.TOTAL_DAY_TIME)
+                local d = (tonumber(TheWorld.state.cycles) or 0) + 1
+					+ (tonumber(TheWorld.state.time) or 0)
+					+ (totalseconds / TUNING.TOTAL_DAY_TIME)
                 local m = math.floor(totalseconds / 60)
                 local s = totalseconds % 60
 
@@ -1311,12 +1452,14 @@ function StatusAnnouncer:AnnounceWorldtemp(pronoun)
                 message = string.format(STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.RAIN_START2, world, tseason, tshow)
             end
         else
-			local world, totalseconds = PredictRainStop()
-            if world == "Caves" then
+			local world, totalseconds, world_type = PredictRainStop()
+            if world_type == "Caves" then
                 tshow = STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.CAVES_RAIN
             end
 
-            local d = TheWorld.state.cycles + 1 + TheWorld.state.time + (totalseconds / TUNING.TOTAL_DAY_TIME)
+            local d = (tonumber(TheWorld.state.cycles) or 0) + 1
+				+ (tonumber(TheWorld.state.time) or 0)
+				+ (totalseconds / TUNING.TOTAL_DAY_TIME)
             local m = math.floor(totalseconds / 60)
             local s = totalseconds % 60
 
@@ -1324,7 +1467,7 @@ function StatusAnnouncer:AnnounceWorldtemp(pronoun)
         end
 
         if EXPLICIT then
-            return self:Announce(string.format(STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.WT, temp, message))
+            return self:Announce(string.format(STRINGS._STATUS_ANNOUNCEMENTS._.ANNOUNCE_WORLDTEMP.WT, temp, temp / 2, message))
         else
             return self:Announce(message)
         end

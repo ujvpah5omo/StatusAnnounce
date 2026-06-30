@@ -25,7 +25,7 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_ITEM = {
 			-- 這需要反映翻譯語言的語法
 			-- 例如，這可能變成“我的箱子裝有6個紙莎草。”
-			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {S}{ITEM}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}。",
+			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {S}{ITEM}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}{ITEM_NAME_INTRO}{ITEM_NAME2}。",
 			
 			--其中壹個進入了{I_HAVE}
 			I_HAVE = "我擁有 ",
@@ -46,6 +46,8 @@ ANNOUNCE_STRINGS = {
 			--其中壹個進入{WITH}
 			WITH = " 擁有 ", --如果只是壹個事物
 			AND_THIS_ONE_HAS = ", 這個擁有 ", --如果有多個，只顯示壹個的耐久性
+			AND_THIS_ONE_IS = ", 這個擁有 ",
+			AND_THIS_ONE_NAME = ", 這個名為 ",
 			
 			--{PERCENT} 是否從產品的耐用性中獲得
 			
@@ -180,6 +182,8 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_WORLDTEMP = {
 			SURFACE = "地表",
 			CAVES = "洞穴",
+			PORKLAND = "哈姆雷特",
+			ISLAND = "海難",
 			RAIN = "降雨",
 			SPRING = "春天",
 			SUMMER = "夏天",
@@ -190,10 +194,26 @@ ANNOUNCE_STRINGS = {
 			AUTUMN_RAIN = "秋雨",
 			WINTER_RAIN = "紛紛白雪",
 			CAVES_RAIN = "大雨",
-			RAIN_START = "%s將會在第%.2f天迎來一場%s(%d分%d秒)",
-			RAIN_START2 = "%s的這個%s不會再有%s啦！",
-			RAIN_STOP = "%s的%s會在第%.2f天時停止(%d分%d秒)",
-			WT = "(世界溫度:%d°) %s",
+			TEMPERATE = "和平季",
+			HUMID = "潮濕季",
+			LUSH = "繁茂季",
+			APORKALYPSE = "毀滅季",
+			MILD = "溫和季",
+			WET = "颶風季",
+			GREEN = "雨季",
+			DRY = "旱季",
+			TEMPERATE_RAIN = "和平雨",
+			HUMID_RAIN = "回南天雨",
+			LUSH_RAIN = "雨",
+			APORKALYPSE_RAIN = "雨",
+			MILD_RAIN = "不溫和雨",
+			WET_RAIN = "颶風大雨",
+			GREEN_RAIN = "瓢潑大雨",
+			DRY_RAIN = "雨",
+			RAIN_START = "%s 將會在第 %.2f 天迎來一場%s(%d分%d秒)",
+			RAIN_START2 = "%s 的這個 %s 不會再有%s啦！",
+			RAIN_STOP = "%s 的%s會在第 %.2f 天時停止(%d分%d秒)",
+			WT = "【世界溫度: %d° | %d°C】%s",
         },
 		An_null = "未知物體",
 		An_null2 = "未知生物",

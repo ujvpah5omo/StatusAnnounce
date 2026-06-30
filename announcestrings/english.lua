@@ -25,7 +25,7 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_ITEM = {
 			-- This needs to reflect the translating language's grammar
 			-- For example, this might become "I have 6 papyrus in this chest."
-			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {ITEM}{S}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}.",
+			FORMAT_STRING = "{I_HAVE}{THIS_MANY} {ITEM}{S}{IN_THIS}{CONTAINER}{WITH}{PERCENT}{DURABILITY}{ITEM_NAME_INTRO}{ITEM_NAME2}.",
 
 			-- One of these goes into {I_HAVE}
 			I_HAVE = "I have ",
@@ -47,6 +47,7 @@ ANNOUNCE_STRINGS = {
 			WITH = " with ", --if it's only one thing
 			AND_THIS_ONE_HAS = ", and this one has ", --if there are multiple, show durability of one
 			AND_THIS_ONE_IS = ", and this one is ", --if there are multiple, show durability of one
+			AND_THIS_ONE_NAME = ", and this one is named ",
 
 			-- {PERCENT} is acquired from the item's durability
 
@@ -181,6 +182,8 @@ ANNOUNCE_STRINGS = {
 		ANNOUNCE_WORLDTEMP = {
 			SURFACE = "World",
 			CAVES = "Caves",
+			PORKLAND = "Hamlet",
+			ISLAND = "Shipwrecked",
 			RAIN = "Rain",
 			SPRING = "Spring",
 			SUMMER = "Summer",
@@ -191,10 +194,26 @@ ANNOUNCE_STRINGS = {
 			AUTUMN_RAIN = "Autumn rain",
 			WINTER_RAIN = "Snowing",
 			CAVES_RAIN = "Torrential rain",
+			TEMPERATE = "Temperate",
+			HUMID = "Humid",
+			LUSH = "Lush",
+			APORKALYPSE = "Aporkalypse",
+			MILD = "Mild",
+			WET = "Wet",
+			GREEN = "Green",
+			DRY = "Dry",
+			TEMPERATE_RAIN = "Temperate rain",
+			HUMID_RAIN = "Humid rain",
+			LUSH_RAIN = "Rain",
+			APORKALYPSE_RAIN = "Rain",
+			MILD_RAIN = "Mild rain",
+			WET_RAIN = "Wet rain",
+			GREEN_RAIN = "Green rain",
+			DRY_RAIN = "Rain",
 			RAIN_START = "%s will be on the %.2f day %s(%d m %d s)",
 			RAIN_START2 = "This %s of %s will no longer have %s",
 			RAIN_STOP = "%s of %s will stop on %.2f day (%d m %d s)",
-			WT = "(WorldTemperature: %d°) %s",
+			WT = "【World temperature: %d° | %d°C】%s",
         },
 		An_null = "Unknown Object",
 		An_null2 = "Unknown Creature",

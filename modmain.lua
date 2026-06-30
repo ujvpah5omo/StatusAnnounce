@@ -435,13 +435,13 @@ AddClassPostConstruct("widgets/statusdisplays", function(self)
 end)
 
 local function GetIngredientName(NAMES, prefabname)
-	if type(prefabname) ~= "string" then return "MISSING NAME" end
+	if type(prefabname) ~= "string" then return "UNKNOWN INGREDIENT" end
 	return NAMES[prefabname:upper()] or prefabname
 end
 
 -- Capture mouse clicks on recipes
 local function GetClickedIngredient(recipe, craftingmenu_ingredients)
-	if craftingmenu_ingredients == nil then
+	if recipe == nil or craftingmenu_ingredients == nil then
 		return nil
 	end
 	local _, ingredient_root = GLOBAL.next(craftingmenu_ingredients.children)
@@ -482,8 +482,8 @@ function CraftingMenuHUD:OnControl(control, down, ...)
 		-- Check if we're clicking on a pinned recipe or its ingredient
 		if self.pinbar.focus then
 			for _,slot in ipairs(self.pinbar.pin_slots) do
-				local recipe = GLOBAL.AllRecipes[slot.recipe_name]
 				if slot.focus then
+					local recipe = GLOBAL.AllRecipes[slot.recipe_name]
 					local ingredient = GetClickedIngredient(recipe, slot.recipe_popup.ingredients)
 					return StatusAnnouncer:AnnounceRecipe(recipe, ingredient)
 				end
@@ -654,12 +654,37 @@ end
 local function InGame()
     return GLOBAL.ThePlayer and  GLOBAL.ThePlayer.HUD and not GLOBAL.ThePlayer.HUD:HasInputFocus()
 end
+
+local function IsMissingDisplayName(name)
+	return type(name) ~= "string"
+		or name:find("^%s*$") ~= nil
+		or name:upper():find("MISSING NAME", 1, true) ~= nil
+end
+
+local function GetFallbackName(item)
+	local prefab = item and item.prefab
+	if type(prefab) ~= "string" then
+		return ""
+	end
+	local name = GLOBAL.STRINGS.NAMES[prefab:upper()]
+	return not IsMissingDisplayName(name) and name or prefab:gsub("_", " ")
+end
+
+local function GetBasicName(item)
+	local name = item and item.GetBasicDisplayName and item:GetBasicDisplayName() or nil
+	return not IsMissingDisplayName(name) and name or GetFallbackName(item)
+end
+
 local function GetDescriptionString(item)
     if item == nil then
         return ""
     end
+	local name = item.GetDisplayName and item:GetDisplayName() or GetBasicName(item)
+	if IsMissingDisplayName(name) then
+		name = GetFallbackName(item)
+	end
     local adjective = item:GetAdjective()
-    return adjective ~= nil and (adjective.." "..item:GetDisplayName()) or item:GetDisplayName()
+    return adjective ~= nil and (adjective.." "..name) or name
 end
 local cooldown = false
 AddComponentPostInit("playercontroller", function(self, inst)
@@ -690,7 +715,10 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				local dis = ent:GetDistanceSqToPoint(x, _, z)^0.5
 				local count1 = 0
 				local count2 = 0
-				local name1 = GLOBAL.STRINGS.NAMES[ent.prefab:upper()] or ent:GetBasicDisplayName()
+				local name1 = GLOBAL.STRINGS.NAMES[ent.prefab:upper()]
+				if IsMissingDisplayName(name1) then
+					name1 = GetBasicName(ent)
+				end
 				if string.find(name1, "{item}") then
 					name1 = string.gsub(name1,"{item}","")
 				end
@@ -700,15 +728,11 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				end
 				for k,v in pairs(ents)do
 					if v.prefab == ent.prefab and v ~= GLOBAL.ThePlayer then
-						if v.replica._ and v.replica._.stackable and v.replica._.stackable._stacksize then
-							count1 = count1 + v.replica._.stackable._stacksize:value()
-						end
-						count1 = count1 + 1
+						local stackable = v.replica and v.replica.stackable
+						local stack_size = stackable and stackable:StackSize() or 1
+						count1 = count1 + stack_size
 						if GetDescriptionString(v) == name2 then
-							if v.replica._ and v.replica._.stackable and v.replica._.stackable._stacksize then
-								count2 = count2 + v.replica._.stackable._stacksize:value()
-							end
-							count2 = count2 + 1
+							count2 = count2 + stack_size
 						end
 					end
 				end
