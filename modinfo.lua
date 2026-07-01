@@ -9,7 +9,7 @@ name = translate({en = "Status Announce", zh = "快捷宣告 (中文)", zht = "�
 --Who wrote this awesome mod?
 author = "rezecib + 傳說覺悟 汉化"
 --A version number so you can ask people if they are running an old version of your mod.
-version = "2.13.8"
+version = "2.13.9"
 --A description of the mod.
 description = translate({
 	en = "version:"..version.."\n"..[[
