@@ -766,6 +766,30 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		self._statusannounce_target_index = nil
 	end
 
+	local function IsControllerTargetOnScreen(ent)
+		if not ent or not ent.Transform then
+			return false
+		end
+		local world_x, world_y, world_z
+		if ent.AnimState then
+			world_x, world_y, world_z = ent.AnimState:GetSymbolPosition("", 0, 0, 0)
+		else
+			world_x, world_y, world_z = ent.Transform:GetWorldPosition()
+		end
+		local screen_x, screen_y = GLOBAL.TheSim:GetScreenPos(world_x, world_y, world_z)
+		local screen_width, screen_height = GLOBAL.TheSim:GetScreenSize()
+		local min_x = screen_width * .25
+		local max_x = screen_width * .75
+		local min_y = screen_height * .25
+		local max_y = screen_height * .75
+		return screen_x ~= nil
+			and screen_y ~= nil
+			and screen_x >= min_x
+			and screen_x <= max_x
+			and screen_y >= min_y
+			and screen_y <= max_y
+	end
+
 	local function IsControllerAnnounceTarget(ent)
 		return ent ~= nil
 			and ent ~= inst
@@ -777,6 +801,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			and not ent:HasTag("DECOR")
 			and not ent:HasTag("INLIMBO")
 			and not ent:HasTag("NOCLICK")
+			and IsControllerTargetOnScreen(ent)
 			and (GLOBAL.CanEntitySeeTarget == nil or GLOBAL.CanEntitySeeTarget(inst, ent))
 	end
 
