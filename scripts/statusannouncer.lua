@@ -336,7 +336,13 @@ function StatusAnnouncer:AnnounceItem(slot)
 		end
 	end
 	if this_many == nil or this_many == "1" then this_many = a end
+	local item_prefab = type(item.prefab) == "string" and item.prefab:lower() or ""
 	local has_variable_name = name:find("{item}", 1, true) ~= nil
+		or item_prefab == "blueprint"
+		or item_prefab:find("_blueprint$", 1) ~= nil
+		or item_prefab == "sketch"
+		or item_prefab:find("_sketch$", 1) ~= nil
+		or item:HasTag("sketch")
 	if has_variable_name and description_name ~= "" and name:lower() ~= description_name:lower() then
 		if plural then
 			name = name:gsub("{item}", ""):gsub("^%s+", ""):gsub("%s+$", "")
