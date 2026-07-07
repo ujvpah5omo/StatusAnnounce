@@ -1007,12 +1007,34 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		[GLOBAL.CONTROL_MOVE_LEFT] = true,
 	}
 
+	local function IsAnyControl(control, ...)
+		for i = 1, select("#", ...) do
+			local compare_control = select(i, ...)
+			if compare_control ~= nil and control == compare_control then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function SwallowControllerControl(control)
+		if control ~= nil then
+			self._statusannounce_swallow_controls = self._statusannounce_swallow_controls or {}
+			self._statusannounce_swallow_controls[control] = true
+		end
+	end
+
 	local function HandleControllerAnnounceControl(control, down)
 		if not TheInput:ControllerAttached() then
 			if self._statusannounce_mode then
 				ExitControllerAnnounceMode()
 			end
 			return false
+		elseif self._statusannounce_swallow_controls and self._statusannounce_swallow_controls[control] then
+			if not down then
+				self._statusannounce_swallow_controls[control] = nil
+			end
+			return true
 		elseif not self._statusannounce_mode then
 			if control ~= GLOBAL.CONTROL_INSPECT then
 				return false
@@ -1053,14 +1075,16 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				CycleControllerAnnounceTarget(-1)
 			end
 			return true
-		elseif control == GLOBAL.CONTROL_CONTROLLER_ACTION or control == GLOBAL.CONTROL_ACCEPT then
+		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION) then
 			if down and self._statusannounce_target then
+				SwallowControllerControl(control)
 				AnnounceWorldEntity(self._statusannounce_target, inst, true)
 				ExitControllerAnnounceMode()
 			end
 			return true
-		elseif control == GLOBAL.CONTROL_CONTROLLER_ATTACK then
+		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK) then
 			if down and self._statusannounce_target then
+				SwallowControllerControl(control)
 				AnnounceWorldEntity(self._statusannounce_target, inst, false)
 				ExitControllerAnnounceMode()
 			end
