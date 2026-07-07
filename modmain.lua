@@ -691,11 +691,37 @@ local function GetDescriptionString(item)
     return adjective ~= nil and (adjective.." "..name) or name
 end
 
+local function IsEntityInAnnouncementScreenRange(ent, viewer)
+	if not ent or not ent.Transform then
+		return false
+	end
+	if GLOBAL.CanEntitySeeTarget ~= nil and viewer ~= nil and not GLOBAL.CanEntitySeeTarget(viewer, ent) then
+		return false
+	end
+	local world_x, world_y, world_z
+	if ent.AnimState then
+		world_x, world_y, world_z = ent.AnimState:GetSymbolPosition("", 0, 0, 0)
+	else
+		world_x, world_y, world_z = ent.Transform:GetWorldPosition()
+	end
+	local screen_x, screen_y = GLOBAL.TheSim:GetScreenPos(world_x, world_y, world_z)
+	local screen_width, screen_height = GLOBAL.TheSim:GetScreenSize()
+	return screen_x ~= nil
+		and screen_y ~= nil
+		and screen_x >= 0
+		and screen_x <= screen_width
+		and screen_y >= 0
+		and screen_y <= screen_height
+end
+
 local function AnnounceWorldEntity(ent, player, single)
 	if not ent or not ent:IsValid() or not ent.prefab then
 		return false
 	end
 	if ent == player then
+		return false
+	end
+	if not IsEntityInAnnouncementScreenRange(ent, player) then
 		return false
 	end
 	if ent:HasTag("player") and ent.name then
@@ -719,7 +745,7 @@ local function AnnounceWorldEntity(ent, player, single)
 
 	local ents = GLOBAL.TheSim:FindEntities(x, 0, z, 80, nil, {"FX", "DECOR", "INLIMBO", "NOCLICK"})
 	for _, v in pairs(ents) do
-		if v.prefab == ent.prefab and v ~= player then
+		if v.prefab == ent.prefab and v ~= player and IsEntityInAnnouncementScreenRange(v, player) then
 			local stackable = v.replica and v.replica.stackable
 			local stack_size = stackable and stackable:StackSize() or 1
 			count1 = count1 + stack_size
@@ -766,30 +792,6 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		self._statusannounce_target_index = nil
 	end
 
-	local function IsControllerTargetOnScreen(ent)
-		if not ent or not ent.Transform then
-			return false
-		end
-		local world_x, world_y, world_z
-		if ent.AnimState then
-			world_x, world_y, world_z = ent.AnimState:GetSymbolPosition("", 0, 0, 0)
-		else
-			world_x, world_y, world_z = ent.Transform:GetWorldPosition()
-		end
-		local screen_x, screen_y = GLOBAL.TheSim:GetScreenPos(world_x, world_y, world_z)
-		local screen_width, screen_height = GLOBAL.TheSim:GetScreenSize()
-		local min_x = screen_width * .25
-		local max_x = screen_width * .75
-		local min_y = screen_height * .25
-		local max_y = screen_height * .75
-		return screen_x ~= nil
-			and screen_y ~= nil
-			and screen_x >= min_x
-			and screen_x <= max_x
-			and screen_y >= min_y
-			and screen_y <= max_y
-	end
-
 	local function IsControllerAnnounceTarget(ent)
 		return ent ~= nil
 			and ent ~= inst
@@ -801,8 +803,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			and not ent:HasTag("DECOR")
 			and not ent:HasTag("INLIMBO")
 			and not ent:HasTag("NOCLICK")
-			and IsControllerTargetOnScreen(ent)
-			and (GLOBAL.CanEntitySeeTarget == nil or GLOBAL.CanEntitySeeTarget(inst, ent))
+			and IsEntityInAnnouncementScreenRange(ent, inst)
 	end
 
 	local function GetControllerAnnounceTargets()
