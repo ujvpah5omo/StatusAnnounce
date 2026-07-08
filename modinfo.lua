@@ -7,12 +7,12 @@ end
 --The name of the mod displayed in the 'mods' screen.
 name = translate({en = "Status Announce", zh = "快捷宣告 (中文)", zht = "快捷宣告 (繁體中文)"})
 --Who wrote this awesome mod?
-author = "rezecib + 傳說覺悟 汉化"
+author = "Codex"
 --A version number so you can ask people if they are running an old version of your mod.
-version = "2.13.13"
+version = "2.13.14"
 --A description of the mod.
 description = translate({
-	en = "version:"..version.."\n"..[[
+	en = "version:"..version.."  Update: refine controller announcement input handling.\n"..[[
 Alt click parts of the HUD to announce their status (I'm wounded!, I have 2 twigs., We need more drying racks.). ALT+SHIFT click to announce items.
 ]],
 	zh = "当前版本: "..version.."  更新：修复手柄宣告模式下A/X仍触发原有行为的问题。\n"..[[

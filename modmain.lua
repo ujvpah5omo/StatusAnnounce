@@ -701,7 +701,8 @@ local function IsEntityInAnnouncementScreenRange(ent, viewer)
 	local world_x, world_y, world_z
 	if ent.AnimState then
 		world_x, world_y, world_z = ent.AnimState:GetSymbolPosition("", 0, 0, 0)
-	else
+	end
+	if world_x == nil then
 		world_x, world_y, world_z = ent.Transform:GetWorldPosition()
 	end
 	local screen_x, screen_y = GLOBAL.TheSim:GetScreenPos(world_x, world_y, world_z)
@@ -782,7 +783,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		end
 	end
 
-	local function ExitControllerAnnounceMode()
+	local function ExitControllerAnnounceMode(preserve_swallow_controls)
 		CancelControllerHoldTask()
 		ClearControllerTarget()
 		SetModHUDFocus("ControllerAnnounce", false)
@@ -790,6 +791,9 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		self._statusannounce_hold_elapsed = nil
 		self._statusannounce_targets = nil
 		self._statusannounce_target_index = nil
+		if not preserve_swallow_controls then
+			self._statusannounce_swallow_controls = nil
+		end
 	end
 
 	local function IsControllerAnnounceTarget(ent)
@@ -945,6 +949,23 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		return true
 	end
 
+	local function SelectControllerAnnounceTarget(index)
+		local targets = self._statusannounce_targets or {}
+		while #targets > 0 do
+			index = ((index - 1) % #targets) + 1
+			self._statusannounce_target_index = index
+			if SetControllerAnnounceTarget(targets[index]) then
+				return true
+			end
+			table.remove(targets, index)
+			if index > #targets then
+				index = 1
+			end
+		end
+		ExitControllerAnnounceMode()
+		return false
+	end
+
 	local function EnterControllerAnnounceMode()
 		self._statusannounce_hold_task = nil
 		self._statusannounce_hold_elapsed = true
@@ -974,12 +995,12 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		end
 		self._statusannounce_target_index = index
 		SetModHUDFocus("ControllerAnnounce", true)
-		SetControllerAnnounceTarget(targets[index])
+		SelectControllerAnnounceTarget(index)
 	end
 
 	local function CycleControllerAnnounceTarget(step)
 		local current = self._statusannounce_target
-		local targets = GetControllerAnnounceTargets()
+		local targets = self._statusannounce_targets or {}
 		if #targets == 0 then
 			ExitControllerAnnounceMode()
 			return
@@ -993,9 +1014,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			end
 		end
 		index = ((index - 1 + step) % #targets) + 1
-		self._statusannounce_targets = targets
-		self._statusannounce_target_index = index
-		SetControllerAnnounceTarget(targets[index])
+		SelectControllerAnnounceTarget(index)
 	end
 
 	local controller_next_controls = {
@@ -1017,25 +1036,74 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		return false
 	end
 
-	local function SwallowControllerControl(control)
-		if control ~= nil then
-			self._statusannounce_swallow_controls = self._statusannounce_swallow_controls or {}
-			self._statusannounce_swallow_controls[control] = true
+	local function SwallowControllerControls(...)
+		self._statusannounce_swallow_controls = self._statusannounce_swallow_controls or {}
+		for i = 1, select("#", ...) do
+			local control = select(i, ...)
+			if control ~= nil then
+				self._statusannounce_swallow_controls[control] = true
+			end
+		end
+	end
+
+	local function IsSwallowingControllerControl(control)
+		return self._statusannounce_swallow_controls ~= nil
+			and control ~= nil
+			and self._statusannounce_swallow_controls[control] == true
+	end
+
+	local function ClearSwallowedControllerControl(control)
+		if self._statusannounce_swallow_controls ~= nil and control ~= nil then
+			self._statusannounce_swallow_controls[control] = nil
+			if next(self._statusannounce_swallow_controls) == nil then
+				self._statusannounce_swallow_controls = nil
+			end
+		end
+	end
+
+	local function ClearSwallowedControllerControls(...)
+		for i = 1, select("#", ...) do
+			ClearSwallowedControllerControl(select(i, ...))
+		end
+	end
+
+	local function AnnounceControllerSelection(single)
+		if self._statusannounce_target then
+			if single then
+				SwallowControllerControls(GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION)
+				AnnounceWorldEntity(self._statusannounce_target, inst, true)
+			else
+				SwallowControllerControls(GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK)
+				AnnounceWorldEntity(self._statusannounce_target, inst, false)
+			end
+			ExitControllerAnnounceMode(true)
 		end
 	end
 
 	local function HandleControllerAnnounceControl(control, down)
+		if IsSwallowingControllerControl(control) then
+			if not down then
+				if IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION) then
+					ClearSwallowedControllerControls(GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION)
+				elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK) then
+					ClearSwallowedControllerControls(GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK)
+				else
+					ClearSwallowedControllerControl(control)
+				end
+			end
+			return true
+		end
+
 		if not TheInput:ControllerAttached() then
 			if self._statusannounce_mode then
 				ExitControllerAnnounceMode()
+			else
+				self._statusannounce_swallow_controls = nil
 			end
 			return false
-		elseif self._statusannounce_swallow_controls and self._statusannounce_swallow_controls[control] then
-			if not down then
-				self._statusannounce_swallow_controls[control] = nil
-			end
-			return true
-		elseif not self._statusannounce_mode then
+		end
+
+		if not self._statusannounce_mode then
 			if control ~= GLOBAL.CONTROL_INSPECT then
 				return false
 			end
@@ -1051,7 +1119,6 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				return true
 			elseif not down and is_holding then
 				local should_inspect = self._statusannounce_hold_task ~= nil
-					or self._statusannounce_hold_elapsed == true
 				CancelControllerHoldTask()
 				self._statusannounce_hold_elapsed = nil
 				if should_inspect then
@@ -1077,16 +1144,12 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			return true
 		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION) then
 			if down and self._statusannounce_target then
-				SwallowControllerControl(control)
-				AnnounceWorldEntity(self._statusannounce_target, inst, true)
-				ExitControllerAnnounceMode()
+				AnnounceControllerSelection(true)
 			end
 			return true
 		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK) then
 			if down and self._statusannounce_target then
-				SwallowControllerControl(control)
-				AnnounceWorldEntity(self._statusannounce_target, inst, false)
-				ExitControllerAnnounceMode()
+				AnnounceControllerSelection(false)
 			end
 			return true
 		elseif control == GLOBAL.CONTROL_CONTROLLER_ALTACTION or control == GLOBAL.CONTROL_CANCEL then
