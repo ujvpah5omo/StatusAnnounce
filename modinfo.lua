@@ -4,18 +4,22 @@ local function translate(language_table)  -- use this fn can be automatically tr
 	language_table.zht = language_table.zht or language_table.zh
 	return language_table[L] or language_table.en
 end
+--A version number so you can ask people if they are running an old version of your mod.
+version = "2.13.15"
 --The name of the mod displayed in the 'mods' screen.
-name = translate({en = "Status Announce", zh = "快捷宣告 (中文)", zht = "快捷宣告 (繁體中文)"})
+name = translate({
+	en = "Status Announce "..version.." (Codex Test)",
+	zh = "快捷宣告 "..version.." (Codex测试)",
+	zht = "快捷宣告 "..version.." (Codex測試)",
+})
 --Who wrote this awesome mod?
 author = "Codex"
---A version number so you can ask people if they are running an old version of your mod.
-version = "2.13.14"
 --A description of the mod.
 description = translate({
-	en = "version:"..version.."  Update: refine controller announcement input handling.\n"..[[
+	en = "version:"..version.."  Update: add controller radial announcement wheel.\n"..[[
 Alt click parts of the HUD to announce their status (I'm wounded!, I have 2 twigs., We need more drying racks.). ALT+SHIFT click to announce items.
 ]],
-	zh = "当前版本: "..version.."  更新：修复手柄宣告模式下A/X仍触发原有行为的问题。\n"..[[
+	zh = "当前版本: "..version.."  更新：添加手柄径向宣告轮盘。\n"..[[
 1、同屏宣告支持生物血量宣告，添加ping宣告；
 2、Alt+Shift+鼠标左键/右键 点击周围物件进行宣告；
 3、Alt+Shift+鼠标左键 点击季节时钟MOD 世界温度UI进行宣告世界温度与降雨；
@@ -31,7 +35,7 @@ Alt click parts of the HUD to announce their status (I'm wounded!, I have 2 twig
 
 按住 Alt 键单击 HUD 的某些部分以宣布它们的状态（我受伤了！、我有 2 根树枝。、我们需要更多的晾肉架。）。 Alt+Shift 单击以宣布项目。
 ]],
-	zht = "當前版本: "..version.."  更新：修復手柄宣告模式下A/X仍觸發原有行為的問題。\n"..[[
+	zht = "當前版本: "..version.."  更新：添加手柄徑向宣告輪盤。\n"..[[
 1、同屏宣告支持生物血量宣告，添加ping宣告；
 2、Alt+Shift+滑鼠左鍵/右鍵 點擊周圍物件進行宣告；
 3、Alt+Shift+滑鼠左鍵 點擊季節時鐘MOD 世界溫度UI進行宣告世界溫度與降雨；

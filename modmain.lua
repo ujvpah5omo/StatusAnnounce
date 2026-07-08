@@ -791,6 +791,8 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		self._statusannounce_hold_elapsed = nil
 		self._statusannounce_targets = nil
 		self._statusannounce_target_index = nil
+		self._statusannounce_target_page = nil
+		self._statusannounce_waiting_for_inspect_release = nil
 		if not preserve_swallow_controls then
 			self._statusannounce_swallow_controls = nil
 		end
@@ -810,6 +812,97 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			and IsEntityInAnnouncementScreenRange(ent, inst)
 	end
 
+	local CONTROLLER_WHEEL_SLOTS = 8
+	local CONTROLLER_WHEEL_RADIUS = 210
+	local CONTROLLER_WHEEL_LABEL_WIDTH = 132
+	local CONTROLLER_WHEEL_LABEL_HEIGHT = 70
+	local CONTROLLER_WHEEL_TEXT_SIZE = 36
+	local CONTROLLER_WHEEL_TEXT_MIN_WIDTH = 132
+	local CONTROLLER_WHEEL_TEXT_MAX_WIDTH = 320
+	local CONTROLLER_WHEEL_CENTER_Y_OFFSET = 70
+
+	local function GetControllerWheelUtf8Codepoint(text, index)
+		local byte1 = text:byte(index)
+		if byte1 == nil then
+			return nil, index + 1
+		elseif byte1 < 0x80 then
+			return byte1, index + 1
+		elseif byte1 < 0xE0 then
+			local byte2 = text:byte(index + 1) or 0
+			return (byte1 - 0xC0) * 0x40 + (byte2 - 0x80), index + 2
+		elseif byte1 < 0xF0 then
+			local byte2 = text:byte(index + 1) or 0
+			local byte3 = text:byte(index + 2) or 0
+			return (byte1 - 0xE0) * 0x1000 + (byte2 - 0x80) * 0x40 + (byte3 - 0x80), index + 3
+		else
+			local byte2 = text:byte(index + 1) or 0
+			local byte3 = text:byte(index + 2) or 0
+			local byte4 = text:byte(index + 3) or 0
+			return (byte1 - 0xF0) * 0x40000 + (byte2 - 0x80) * 0x1000 + (byte3 - 0x80) * 0x40 + (byte4 - 0x80), index + 4
+		end
+	end
+
+	local function IsControllerWheelChineseCodepoint(codepoint)
+		return codepoint ~= nil
+			and ((codepoint >= 0x3400 and codepoint <= 0x4DBF) -- CJK Extension A
+				or (codepoint >= 0x4E00 and codepoint <= 0x9FFF) -- CJK Unified Ideographs
+				or (codepoint >= 0xF900 and codepoint <= 0xFAFF) -- CJK Compatibility Ideographs
+				or (codepoint >= 0x20000 and codepoint <= 0x2A6DF)
+				or (codepoint >= 0x2A700 and codepoint <= 0x2B73F)
+				or (codepoint >= 0x2B740 and codepoint <= 0x2B81F)
+				or (codepoint >= 0x2B820 and codepoint <= 0x2CEAF))
+	end
+
+	local function GetControllerWheelTextUnits(text)
+		text = type(text) == "string" and text or ""
+		local units = 0
+		local index = 1
+		while index <= #text do
+			local codepoint
+			codepoint, index = GetControllerWheelUtf8Codepoint(text, index)
+			if IsControllerWheelChineseCodepoint(codepoint) then
+				units = units + 1
+			elseif codepoint ~= nil and codepoint < 0x80 then
+				units = units + .55
+			else
+				units = units + 1
+			end
+		end
+		return units
+	end
+
+	local function GetControllerWheelTextSize(text, max_size, min_size)
+		local units = GetControllerWheelTextUnits(text)
+		if units <= 8 then
+			return max_size
+		elseif units <= 14 then
+			return math.max(min_size, max_size - 4)
+		elseif units <= 20 then
+			return math.max(min_size, max_size - 8)
+		end
+		return min_size
+	end
+
+	local function GetControllerWheelTextWidth(text)
+		local width = 64 + GetControllerWheelTextUnits(text) * 17
+		return math.max(CONTROLLER_WHEEL_TEXT_MIN_WIDTH, math.min(CONTROLLER_WHEEL_TEXT_MAX_WIDTH, width))
+	end
+
+	local function FormatControllerWheelName(name)
+		name = type(name) == "string" and name or ""
+		return name
+	end
+
+	local function GetControllerAnnounceIcon(ent)
+		local inventoryitem = ent and ent.replica and ent.replica.inventoryitem
+		local image = inventoryitem and inventoryitem.GetImage and inventoryitem:GetImage() or nil
+		local atlas = inventoryitem and inventoryitem.GetAtlas and inventoryitem:GetAtlas() or nil
+		if atlas == nil and image ~= nil and GLOBAL.GetInventoryItemAtlas then
+			atlas = GLOBAL.GetInventoryItemAtlas(image)
+		end
+		return atlas, image
+	end
+
 	local function GetControllerAnnounceTargets()
 		local x, y, z = inst.Transform:GetWorldPosition()
 		local targets = GLOBAL.TheSim:FindEntities(x, y, z, 80, nil, {"FX", "DECOR", "INLIMBO", "NOCLICK"})
@@ -820,6 +913,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				local name = GetDescriptionString(ent):gsub("[\r\n]+", " ")
 				local key = ent.prefab .. "\0" .. name
 				local entry = grouped[key]
+				local atlas, image = GetControllerAnnounceIcon(ent)
 				local stackable = ent.replica and ent.replica.stackable
 				local stack_size = stackable and stackable:StackSize() or 1
 				local distance_sq = inst:GetDistanceSqToInst(ent)
@@ -833,6 +927,8 @@ AddComponentPostInit("playercontroller", function(self, inst)
 					entry = {
 						target = ent,
 						name = name,
+						atlas = atlas,
+						image = image,
 						count = stack_size,
 						distance_sq = distance_sq,
 					}
@@ -851,8 +947,6 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		return entries
 	end
 
-	local CONTROLLER_LIST_ROWS = 9
-
 	local function EnsureControllerList()
 		if self._statusannounce_list or not inst.HUD or not inst.HUD.controls then
 			return
@@ -860,27 +954,79 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		local Widget = require("widgets/widget")
 		local Image = require("widgets/image")
 		local Text = require("widgets/text")
-		local root = inst.HUD.controls:AddChild(Widget("statusannounce_controller_list"))
-		root:SetPosition(320, 30)
-		root.bg = root:AddChild(Image("images/global.xml", "square.tex"))
-		root.bg:SetSize(610, 430)
-		root.bg:SetTint(0, 0, 0, .78)
+		local root = inst.HUD.controls:AddChild(Widget("statusannounce_controller_wheel"))
+		root:SetPosition(0, 0)
 		root.title = root:AddChild(Text(GLOBAL.HEADERFONT, 34, ""))
-		root.title:SetPosition(0, 175)
-		root.rows = {}
-		for i = 1, CONTROLLER_LIST_ROWS do
-			local row = root:AddChild(Text(GLOBAL.BODYTEXTFONT, 27, ""))
-			row:SetRegionSize(550, 34)
-			row:SetHAlign(GLOBAL.ANCHOR_LEFT)
-			row:SetPosition(0, 132 - (i - 1) * 34)
-			row:Hide()
-			root.rows[i] = row
+		root.slots = {}
+		for i = 1, CONTROLLER_WHEEL_SLOTS do
+			local slot = root:AddChild(Widget("statusannounce_controller_wheel_slot"))
+			slot.bg = slot:AddChild(Image("images/global.xml", "square.tex"))
+			slot.bg:SetSize(CONTROLLER_WHEEL_LABEL_WIDTH, CONTROLLER_WHEEL_LABEL_HEIGHT)
+			slot.bg:SetTint(0, 0, 0, .58)
+			slot.icon = slot:AddChild(Image("images/global.xml", "square.tex"))
+			slot.icon:SetSize(46, 46)
+			slot.icon:Hide()
+			slot.text = slot:AddChild(Text(GLOBAL.BODYTEXTFONT, CONTROLLER_WHEEL_TEXT_SIZE, ""))
+			slot.text:SetRegionSize(CONTROLLER_WHEEL_TEXT_MIN_WIDTH, CONTROLLER_WHEEL_LABEL_HEIGHT)
+			if slot.text.EnableWordWrap then
+				slot.text:EnableWordWrap(false)
+			end
+			if slot.text.EnableWhitespaceWrap then
+				slot.text:EnableWhitespaceWrap(false)
+			end
+			slot:Hide()
+			root.slots[i] = slot
 		end
-		root.footer = root:AddChild(Text(GLOBAL.BODYTEXTFONT, 25, ""))
-		root.footer:SetRegionSize(560, 60)
-		root.footer:SetPosition(0, -165)
+		root.footer = root:AddChild(Text(GLOBAL.BODYTEXTFONT, CONTROLLER_WHEEL_TEXT_SIZE, ""))
+		root.footer:SetRegionSize(720, 82)
+		if root.footer.EnableWordWrap then
+			root.footer:EnableWordWrap(false)
+		end
+		if root.footer.EnableWhitespaceWrap then
+			root.footer:EnableWhitespaceWrap(false)
+		end
 		self._statusannounce_list = root
 		root:Hide()
+	end
+
+	local function GetControllerWheelCenter(screen_width, screen_height)
+		local world_x, world_y, world_z
+		if inst.AnimState then
+			world_x, world_y, world_z = inst.AnimState:GetSymbolPosition("head", 0, 0, 0)
+		end
+		if world_x == nil then
+			world_x, world_y, world_z = inst.Transform:GetWorldPosition()
+		end
+		local screen_x, screen_y = GLOBAL.TheSim:GetScreenPos(world_x, world_y, world_z)
+		local center_x = screen_x or screen_width * .5
+		local center_y = (screen_y or screen_height * .5) + CONTROLLER_WHEEL_CENTER_Y_OFFSET
+		local min_x = CONTROLLER_WHEEL_RADIUS + CONTROLLER_WHEEL_LABEL_WIDTH * .5
+		local max_x = screen_width - CONTROLLER_WHEEL_RADIUS - CONTROLLER_WHEEL_LABEL_WIDTH * .5
+		local min_y = CONTROLLER_WHEEL_RADIUS + CONTROLLER_WHEEL_LABEL_HEIGHT
+		local max_y = screen_height - CONTROLLER_WHEEL_RADIUS - CONTROLLER_WHEEL_LABEL_HEIGHT
+		if min_x <= max_x then
+			center_x = math.max(min_x, math.min(max_x, center_x))
+		else
+			center_x = 0
+		end
+		if min_y <= max_y then
+			center_y = math.max(min_y, math.min(max_y, center_y))
+		else
+			center_y = 0
+		end
+		return center_x, center_y
+	end
+
+	local function GetControllerWheelSlotAngle(index, count)
+		return math.pi * .5 - (index - 1) * math.pi * 2 / count
+	end
+
+	local function GetControllerAnnouncePageCount(targets)
+		return math.max(1, math.ceil(#targets / CONTROLLER_WHEEL_SLOTS))
+	end
+
+	local function GetControllerAnnouncePageStart(page)
+		return (page - 1) * CONTROLLER_WHEEL_SLOTS + 1
 	end
 
 	local function UpdateControllerList()
@@ -893,41 +1039,94 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		end
 
 		local strings = ANNOUNCE_STRINGS._.CONTROLLER_MODE
-		root.title:SetString(string.format("%s  %d/%d", strings.TITLE, selected, #entries))
-		local first = math.max(1, math.min(selected - math.floor(CONTROLLER_LIST_ROWS / 2), #entries - CONTROLLER_LIST_ROWS + 1))
-		for row_index, row in ipairs(root.rows) do
-			local entry_index = first + row_index - 1
+		local screen_width, screen_height = GLOBAL.TheSim:GetScreenSize()
+		local center_x, center_y = GetControllerWheelCenter(screen_width, screen_height)
+		local page_count = GetControllerAnnouncePageCount(entries)
+		local page = math.max(1, math.min(page_count, self._statusannounce_target_page or math.ceil(selected / CONTROLLER_WHEEL_SLOTS)))
+		self._statusannounce_target_page = page
+		local first = GetControllerAnnouncePageStart(page)
+		local visible_count = math.min(CONTROLLER_WHEEL_SLOTS, #entries - first + 1)
+		root.title:SetString(string.format("%s  %d/%d  %d/%d", strings.TITLE, selected, #entries, page, page_count))
+		root.title:SetPosition(center_x, center_y + 4)
+		for slot_index, slot in ipairs(root.slots) do
+			local entry_index = first + slot_index - 1
 			local entry = entries[entry_index]
 			if entry then
-				local marker = entry_index == selected and "> " or "  "
+				local angle = GetControllerWheelSlotAngle(slot_index, visible_count)
+				local dir_x = math.cos(angle)
+				local dir_y = math.sin(angle)
+				local align_x = dir_x > .35 and GLOBAL.ANCHOR_LEFT
+					or dir_x < -.35 and GLOBAL.ANCHOR_RIGHT
+					or GLOBAL.ANCHOR_MIDDLE
 				local count = entry.count > 1 and ("  x" .. tostring(entry.count)) or ""
-				local distance = math.floor(math.sqrt(entry.distance_sq) / 4 * 10) / 10
-				row:SetString(string.format("%s%s%s  [%.1f]", marker, entry.name, count, distance))
-				if entry_index == selected then
-					row:SetColour(1, .82, .25, 1)
+				local slot_text = FormatControllerWheelName(entry.name) .. count
+				local slot_width = entry.atlas ~= nil and entry.image ~= nil
+					and CONTROLLER_WHEEL_LABEL_WIDTH
+					or GetControllerWheelTextWidth(slot_text)
+				slot:SetPosition(
+					center_x + dir_x * CONTROLLER_WHEEL_RADIUS + dir_x * slot_width * .35,
+					center_y + dir_y * CONTROLLER_WHEEL_RADIUS
+				)
+				slot.text:SetHAlign(align_x)
+				if entry.atlas ~= nil and entry.image ~= nil then
+					slot.bg:SetSize(CONTROLLER_WHEEL_LABEL_WIDTH, CONTROLLER_WHEEL_LABEL_HEIGHT)
+					slot.icon:SetTexture(entry.atlas, entry.image)
+					slot.icon:Show()
+					slot.text:SetRegionSize(CONTROLLER_WHEEL_TEXT_MIN_WIDTH, CONTROLLER_WHEEL_LABEL_HEIGHT)
+					slot.text:SetSize(CONTROLLER_WHEEL_TEXT_SIZE)
+					slot.text:SetString(count ~= "" and count or "")
+					slot.text:SetPosition(0, -34)
 				else
-					row:SetColour(.9, .9, .9, 1)
+					slot.icon:Hide()
+					local text_width = slot_width
+					slot.bg:SetSize(text_width, CONTROLLER_WHEEL_LABEL_HEIGHT)
+					slot.text:SetRegionSize(text_width - 14, CONTROLLER_WHEEL_LABEL_HEIGHT)
+					slot.text:SetPosition(dir_x > .35 and 8 or dir_x < -.35 and -8 or 0, 0)
+					slot.text:SetSize(CONTROLLER_WHEEL_TEXT_SIZE)
+					slot.text:SetString(slot_text)
 				end
-				row:Show()
+				if entry_index == selected then
+					slot.bg:SetTint(.45, .30, .03, .88)
+					slot.text:SetColour(1, .82, .25, 1)
+					slot.icon:SetTint(1, .92, .45, 1)
+				else
+					slot.bg:SetTint(0, 0, 0, .58)
+					slot.text:SetColour(.9, .9, .9, 1)
+					slot.icon:SetTint(1, 1, 1, 1)
+				end
+				slot:Show()
 			else
-				row:Hide()
+				slot:Hide()
 			end
 		end
 
 		local controller_id = TheInput:GetControllerID()
-		local single_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ACTION)
+		local single_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_INSPECT)
 		local group_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ATTACK)
 		local cancel_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_CONTROLLER_ALTACTION)
+		local previous_page_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_ROTATE_LEFT)
+		local next_page_control = TheInput:GetLocalizedControl(controller_id, GLOBAL.CONTROL_ROTATE_RIGHT)
+		local selected_entry = entries[selected]
+		local selected_name = selected_entry and selected_entry.name or ""
+		local selected_distance = selected_entry and math.floor(math.sqrt(selected_entry.distance_sq) / 4 * 10) / 10 or 0
+		local page_hint = page_count > 1
+			and string.format("   %s/%s %s", previous_page_control, next_page_control, strings.PAGE or "page")
+			or ""
+		root.footer:SetSize(GetControllerWheelTextSize(selected_name, CONTROLLER_WHEEL_TEXT_SIZE, 22))
 		root.footer:SetString(string.format(
-			"%s   %s %s   %s %s   %s %s",
+			"%s [%.1f]\n%s   %s %s   %s %s   %s %s%s",
+			selected_name,
+			selected_distance,
 			strings.SWITCH,
 			single_control,
 			strings.SINGLE,
 			group_control,
 			strings.GROUP,
 			cancel_control,
-			strings.CANCEL
+			strings.CANCEL,
+			page_hint
 		))
+		root.footer:SetPosition(center_x, center_y - CONTROLLER_WHEEL_RADIUS - 58)
 		root:Show()
 	end
 
@@ -954,6 +1153,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 		while #targets > 0 do
 			index = ((index - 1) % #targets) + 1
 			self._statusannounce_target_index = index
+			self._statusannounce_target_page = math.ceil(index / CONTROLLER_WHEEL_SLOTS)
 			if SetControllerAnnounceTarget(targets[index]) then
 				return true
 			end
@@ -983,6 +1183,7 @@ AddComponentPostInit("playercontroller", function(self, inst)
 
 		self._statusannounce_mode = true
 		self._statusannounce_targets = targets
+		self._statusannounce_waiting_for_inspect_release = true
 		local preferred = self:GetControllerTarget() or self:GetControllerAttackTarget()
 		local index = 1
 		if preferred then
@@ -994,37 +1195,72 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			end
 		end
 		self._statusannounce_target_index = index
+		self._statusannounce_target_page = math.ceil(index / CONTROLLER_WHEEL_SLOTS)
 		SetModHUDFocus("ControllerAnnounce", true)
 		SelectControllerAnnounceTarget(index)
 	end
 
-	local function CycleControllerAnnounceTarget(step)
-		local current = self._statusannounce_target
+	local function SelectControllerAnnounceTargetByAngle(angle)
 		local targets = self._statusannounce_targets or {}
 		if #targets == 0 then
 			ExitControllerAnnounceMode()
 			return
 		end
 
-		local index = 0
-		for i, entry in ipairs(targets) do
-			if entry.target == current then
-				index = i
-				break
+		local best_index = 1
+		local best_dot = -math.huge
+		local direction_x = math.cos(angle)
+		local direction_y = math.sin(angle)
+		local page = self._statusannounce_target_page or 1
+		local first = GetControllerAnnouncePageStart(page)
+		local visible_count = math.min(CONTROLLER_WHEEL_SLOTS, #targets - first + 1)
+		for slot_index = 1, visible_count do
+			local slot_angle = GetControllerWheelSlotAngle(slot_index, visible_count)
+			local dot = math.cos(slot_angle) * direction_x + math.sin(slot_angle) * direction_y
+			if dot > best_dot then
+				best_dot = dot
+				best_index = first + slot_index - 1
 			end
 		end
-		index = ((index - 1 + step) % #targets) + 1
-		SelectControllerAnnounceTarget(index)
+		SelectControllerAnnounceTarget(best_index)
 	end
 
-	local controller_next_controls = {
-		[GLOBAL.CONTROL_MOVE_DOWN] = true,
-		[GLOBAL.CONTROL_MOVE_RIGHT] = true,
-	}
-	local controller_previous_controls = {
-		[GLOBAL.CONTROL_MOVE_UP] = true,
-		[GLOBAL.CONTROL_MOVE_LEFT] = true,
-	}
+	local function ChangeControllerAnnouncePage(step)
+		local targets = self._statusannounce_targets or {}
+		if #targets == 0 then
+			ExitControllerAnnounceMode()
+			return
+		end
+		local page_count = GetControllerAnnouncePageCount(targets)
+		local page = self._statusannounce_target_page or 1
+		page = ((page - 1 + step) % page_count) + 1
+		self._statusannounce_target_page = page
+		SelectControllerAnnounceTarget(GetControllerAnnouncePageStart(page))
+	end
+
+	local function GetControllerMoveAngle(control)
+		local up = control == GLOBAL.CONTROL_MOVE_UP or TheInput:IsControlPressed(GLOBAL.CONTROL_MOVE_UP)
+		local down = control == GLOBAL.CONTROL_MOVE_DOWN or TheInput:IsControlPressed(GLOBAL.CONTROL_MOVE_DOWN)
+		local right = control == GLOBAL.CONTROL_MOVE_RIGHT or TheInput:IsControlPressed(GLOBAL.CONTROL_MOVE_RIGHT)
+		local left = control == GLOBAL.CONTROL_MOVE_LEFT or TheInput:IsControlPressed(GLOBAL.CONTROL_MOVE_LEFT)
+		local x = (right and 1 or 0) - (left and 1 or 0)
+		local y = (up and 1 or 0) - (down and 1 or 0)
+		if x == 0 and y == 0 then
+			return nil
+		elseif x == 0 then
+			return y > 0 and math.pi * .5 or -math.pi * .5
+		elseif y == 0 then
+			return x > 0 and 0 or math.pi
+		elseif x > 0 and y > 0 then
+			return math.pi * .25
+		elseif x < 0 and y > 0 then
+			return math.pi * .75
+		elseif x < 0 and y < 0 then
+			return -math.pi * .75
+		else
+			return -math.pi * .25
+		end
+	end
 
 	local function IsAnyControl(control, ...)
 		for i = 1, select("#", ...) do
@@ -1132,24 +1368,34 @@ AddComponentPostInit("playercontroller", function(self, inst)
 				return true
 			end
 			return false
-		elseif controller_next_controls[control] then
+		elseif IsAnyControl(control, GLOBAL.CONTROL_MOVE_UP, GLOBAL.CONTROL_MOVE_DOWN, GLOBAL.CONTROL_MOVE_LEFT, GLOBAL.CONTROL_MOVE_RIGHT) then
 			if down then
-				CycleControllerAnnounceTarget(1)
-			end
-			return true
-		elseif controller_previous_controls[control] then
-			if down then
-				CycleControllerAnnounceTarget(-1)
+				local angle = GetControllerMoveAngle(control)
+				if angle ~= nil then
+					SelectControllerAnnounceTargetByAngle(angle)
+				end
 			end
 			return true
 		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION) then
-			if down and self._statusannounce_target then
-				AnnounceControllerSelection(true)
+			if down then
+				SwallowControllerControls(GLOBAL.CONTROL_CONTROLLER_ACTION, GLOBAL.CONTROL_ACCEPT, GLOBAL.CONTROL_ACTION)
 			end
 			return true
 		elseif IsAnyControl(control, GLOBAL.CONTROL_CONTROLLER_ATTACK, GLOBAL.CONTROL_ATTACK, GLOBAL.CONTROL_FORCE_ATTACK) then
 			if down and self._statusannounce_target then
 				AnnounceControllerSelection(false)
+			end
+			return true
+		elseif control == GLOBAL.CONTROL_ROTATE_LEFT then
+			if down then
+				SwallowControllerControls(GLOBAL.CONTROL_ROTATE_LEFT)
+				ChangeControllerAnnouncePage(-1)
+			end
+			return true
+		elseif control == GLOBAL.CONTROL_ROTATE_RIGHT then
+			if down then
+				SwallowControllerControls(GLOBAL.CONTROL_ROTATE_RIGHT)
+				ChangeControllerAnnouncePage(1)
 			end
 			return true
 		elseif control == GLOBAL.CONTROL_CONTROLLER_ALTACTION or control == GLOBAL.CONTROL_CANCEL then
@@ -1158,6 +1404,14 @@ AddComponentPostInit("playercontroller", function(self, inst)
 			end
 			return true
 		elseif control == GLOBAL.CONTROL_INSPECT then
+			if self._statusannounce_waiting_for_inspect_release then
+				if not down then
+					self._statusannounce_waiting_for_inspect_release = nil
+				end
+			elseif down and self._statusannounce_target then
+				SwallowControllerControls(GLOBAL.CONTROL_INSPECT)
+				AnnounceControllerSelection(true)
+			end
 			return true
 		elseif control == GLOBAL.CONTROL_OPEN_INVENTORY
 			or control == GLOBAL.CONTROL_OPEN_CRAFTING
