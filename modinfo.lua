@@ -9,9 +9,9 @@ end
 version = "2.13.16"
 --The name of the mod displayed in the 'mods' screen.
 name = translate({
-	en = "Status Announce (Chinese)",
-	zh = "快捷宣告（中文）",
-	zht = "快捷宣告（中文）",
+	en = "Status Announce (Chinese)--Controller Support",
+	zh = "快捷宣告（中文）--支持手柄",
+	zht = "快捷宣告（中文）--支援手柄",
 })
 --Who wrote this awesome mod?
 author = "Codex"
