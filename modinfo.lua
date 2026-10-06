@@ -6,7 +6,7 @@ local function translate(language_table)  -- use this fn can be automatically tr
 	return language_table[L] or language_table.en
 end
 --A version number so you can ask people if they are running an old version of your mod.
-version = "2.13.16"
+version = "2.13.17"
 --The name of the mod displayed in the 'mods' screen.
 name = translate({
 	en = "Status Announce (Chinese)--Controller Support",
@@ -17,7 +17,7 @@ name = translate({
 author = "Codex"
 --A description of the mod.
 description = translate({
-	en = "Version: "..version.."  Update: added a controller radial announcement wheel.\n\n"..[[
+	en = "Version: "..version.."  Update: fixed a crash when announcing WX-78 circuits.\n\n"..[[
 Announce your status, inventory items, recipes, nearby entities, ping, world temperature and rain timing in chat.
 
 Keyboard/mouse:
@@ -31,7 +31,7 @@ Controller:
 
 Steam Workshop:
 ]]..STEAM_WORKSHOP_URL,
-	zh = "当前版本: "..version.."  更新：添加手柄径向宣告轮盘。\n\n"..[[
+	zh = "当前版本: "..version.."  更新：修复宣告 WX-78 芯片时可能崩溃的问题。\n\n"..[[
 功能：
 1、支持宣告角色状态、背包/容器物品、制作配方、附近实体、延迟、世界温度和降雨时间；
 2、同屏宣告支持生物血量宣告，并支持 ping 宣告；
@@ -54,7 +54,7 @@ Steam Workshop:
 
 Steam 创意工坊：
 ]]..STEAM_WORKSHOP_URL,
-	zht = "當前版本: "..version.."  更新：添加手柄徑向宣告輪盤。\n\n"..[[
+	zht = "當前版本: "..version.."  更新：修復宣告 WX-78 芯片時可能崩潰的問題。\n\n"..[[
 功能：
 1、支援宣告角色狀態、背包/容器物品、製作配方、附近實體、延遲、世界溫度和降雨時間；
 2、同屏宣告支援生物血量宣告，並支援 ping 宣告；

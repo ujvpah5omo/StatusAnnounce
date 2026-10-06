@@ -684,6 +684,37 @@ function StatusAnnouncer:AnnounceSeason()
 	return self:Announce(message, "SEASON")
 end
 
+local function FormatCircuitName(S, chip)
+	local chip_name = nil
+	if type(chip) == "string" then
+		chip_name = STRINGS.NAMES["WX78MODULE_" .. chip:upper()]
+	end
+	if is_missing_name(chip_name) then
+		chip_name = tostring(chip or "")
+	elseif S and type(S.GetCircuitName) == "function" then
+		chip_name = S.GetCircuitName(chip_name)
+	end
+	return is_missing_name(chip_name) and tostring(chip or "") or chip_name
+end
+
+local function GetSafeModuleDefinition(module_index)
+	if type(GetModuleDefinitionFromNetID) ~= "function" then
+		return nil
+	end
+	local ok, module_def = pcall(GetModuleDefinitionFromNetID, module_index)
+	return ok and module_def or nil
+end
+
+local function GetSafeModulesData(widget)
+	if type(widget) ~= "table"
+		or type(widget.owner) ~= "table"
+		or type(widget.owner.GetModulesData) ~= "function" then
+		return {}
+	end
+	local ok, modules_table = pcall(widget.owner.GetModulesData, widget.owner)
+	return ok and type(modules_table) == "table" and modules_table or {}
+end
+
 local function FormatChipList(S, chip_order, chips, charged)
 	local chips_string = ""
 	for _, chip in ipairs(chip_order) do
@@ -691,12 +722,7 @@ local function FormatChipList(S, chip_order, chips, charged)
 			if chips_string ~= "" then
 				chips_string = chips_string .. ", "
 			end
-			local chip_name = STRINGS.NAMES["WX78MODULE_" .. chip:upper()]
-			if type(chip_name) ~= "string" then
-				chip_name = chip
-			else
-				chip_name = S.GetCircuitName(chip_name)
-			end
+			local chip_name = FormatCircuitName(S, chip)
 			chips_string = chips_string .. subfmt(
 				S.FORMAT_STRING_CHIP,
 				{
@@ -715,16 +741,20 @@ local function FormatChipList(S, chip_order, chips, charged)
 end
 
 function StatusAnnouncer:AnnounceWxCircuits(widget)
-	local charge = widget.energy_level
+	local charge = type(widget) == "table" and tonumber(widget.energy_level) or 0
 	local chip_order = {}
 	local charged_chips = {}
 	local uncharged_chips = {}
-	local modules_table = widget.owner:GetModulesData()
+	local modules_table = GetSafeModulesData(widget)
 	for i, module_index in ipairs(modules_table) do
 		if module_index ~= 0 then
-			local module_def = GetModuleDefinitionFromNetID(module_index)
-			local modname = module_def.name
-			charge = charge - module_def.slots
+			local module_def = GetSafeModuleDefinition(module_index)
+			local modname = type(module_def) == "table" and module_def.name or nil
+			local slots = type(module_def) == "table" and tonumber(module_def.slots) or 0
+			if type(modname) ~= "string" or modname == "" then
+				modname = "unknown_" .. tostring(module_index)
+			end
+			charge = charge - slots
 			local add_to = charge < 0 and uncharged_chips or charged_chips
 			if not uncharged_chips[modname] and not charged_chips[modname] then
 				table.insert(chip_order, modname)
